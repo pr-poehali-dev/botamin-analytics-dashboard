@@ -44,7 +44,7 @@ export default function TimeHeatmap({ hourly, byDay }: Props) {
           <BarChart data={hourly} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
             <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
             <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
-            <Tooltip content={<CustomTooltip />} />
+            <Tooltip content={<CustomTooltip />} cursor={false} />
             <Bar dataKey="calls" name="Звонков" radius={[3, 3, 0, 0]}>
               {hourly.map((entry, idx) => (
                 <Cell key={idx} fill={`rgba(0,255,136,${0.2 + (entry.calls / maxCalls) * 0.8})`} />
@@ -69,7 +69,7 @@ export default function TimeHeatmap({ hourly, byDay }: Props) {
             <BarChart data={byDay} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
               <XAxis dataKey="day" tick={{ fill: 'var(--text-muted)', fontSize: 11 }} axisLine={false} tickLine={false} />
               <YAxis hide />
-              <Tooltip content={<CustomTooltip />} />
+              <Tooltip content={<CustomTooltip />} cursor={false} />
               <Bar dataKey="calls" name="Звонков" fill="rgba(0,170,255,0.5)" radius={[3, 3, 0, 0]} />
               <Bar dataKey="converted" name="Лидов" fill="var(--brand-green)" radius={[3, 3, 0, 0]} />
             </BarChart>

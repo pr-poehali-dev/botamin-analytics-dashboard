@@ -40,7 +40,7 @@ export default function DurationChart({ buckets, endReasons }: Props) {
         <BarChart data={buckets} margin={{ top: 0, right: 0, bottom: 0, left: -25 }}>
           <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} />
           <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
-          <Tooltip content={<CustomTooltip />} />
+          <Tooltip content={<CustomTooltip />} cursor={false} />
           <Bar dataKey="count" name="Звонков" radius={[3, 3, 0, 0]}>
             {buckets.map((b, idx) => (
               <Cell
