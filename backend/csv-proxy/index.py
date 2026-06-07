@@ -38,32 +38,41 @@ def classify_stage(dialogue: str) -> int:
     0 = нет диалога (пустой транскрипт)
     1 = только бот говорил, клиент не ответил
     2 = клиент ответил (что-то сказал)
-    3 = согласился на встречу (слова встречи + ответ клиента)
-    4 = квалифицирован (глубокая беседа с квалификацией)
+    3 = согласился на встречу (слова встречи ТОЛЬКО в репликах клиента)
+    4 = квалифицирован (слова квалификации ТОЛЬКО в репликах клиента)
+
+    ВАЖНО: ключевые слова ищем ТОЛЬКО в тексте клиента, не бота.
+    Иначе слова бота ("квалифицирует", "завтра", "понедельник") дают ложные срабатывания.
     """
     if not dialogue or not dialogue.strip():
         return 0
 
     lines = [l.strip() for l in dialogue.split('\n') if l.strip()]
-    # Реальные данные используют "user:" или "client:" для клиента
     client_lines = [l for l in lines if l.lower().startswith('user:') or l.lower().startswith('client:')]
     bot_lines = [l for l in lines if l.lower().startswith('bot:')]
 
-    full_text = dialogue.lower()
-
-    if contains_any(full_text, QUALIFICATION_KEYWORDS) and len(client_lines) > 0:
-        return 4
-
-    if contains_any(full_text, MEETING_KEYWORDS) and len(client_lines) > 0:
-        return 3
-
-    if len(client_lines) > 0:
-        return 2
-
-    if len(bot_lines) >= 1:
+    if not client_lines:
+        # Клиент вообще не ответил
+        if bot_lines:
+            return 1
         return 1
 
-    return 1
+    # Текст ТОЛЬКО реплик клиента
+    client_text = ' '.join(
+        re.sub(r'^(user|client):\s*', '', l, flags=re.IGNORECASE)
+        for l in client_lines
+    ).lower()
+
+    # Этап 4: клиент сам говорит о бюджете, решении, количестве людей
+    if contains_any(client_text, QUALIFICATION_KEYWORDS):
+        return 4
+
+    # Этап 3: клиент называет конкретное время/день встречи
+    if contains_any(client_text, MEETING_KEYWORDS):
+        return 3
+
+    # Этап 2: клиент хоть что-то ответил
+    return 2
 
 
 def parse_duration(raw: str) -> int:
@@ -112,6 +121,8 @@ def handler(event: dict, context) -> dict:
     params = event.get('queryStringParameters') or {}
     sheet_id = params.get('sheet_id', '18lZSxc5G6lhj9hoDgVZKMtrYDYzr2tJ692txym3L7oI')
     gid = params.get('gid', '1903196005')
+    mode = params.get('mode', 'dashboard')
+    verify_stage = int(params.get('stage', '3')) if 'stage' in params else None
 
     url = f'https://docs.google.com/spreadsheets/d/{sheet_id}/export?format=csv&gid={gid}'
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -123,6 +134,43 @@ def handler(event: dict, context) -> dict:
 
     if len(rows) < 2:
         return {'statusCode': 400, 'headers': cors, 'body': json.dumps({'error': 'No data'})}
+
+    # Режим верификации: возвращает реальные диалоги по этапу для ручной проверки
+    if mode == 'verify' and verify_stage is not None:
+        samples = []
+        for row in rows[1:]:
+            if len(row) < 7:
+                continue
+            dialogue = row[6] if len(row) > 6 else ''
+            stage = classify_stage(dialogue)
+            if stage == verify_stage:
+                samples.append({
+                    'phone': row[0][-4:] if len(row[0]) >= 4 else row[0],
+                    'datetime': row[1],
+                    'duration': row[2],
+                    'endReason': row[5] if len(row) > 5 else '',
+                    'stage': stage,
+                    'dialogue': dialogue,
+                    'industry': extract_industry(dialogue) if dialogue else '',
+                })
+            if len(samples) >= 10:
+                break
+        return {
+            'statusCode': 200,
+            'headers': {**cors, 'Content-Type': 'application/json'},
+            'body': json.dumps({
+                'mode': 'verify',
+                'stage': verify_stage,
+                'samples': samples,
+                'description': {
+                    0: 'Нет диалога (пустой транскрипт)',
+                    1: 'Только бот говорил, клиент не ответил',
+                    2: 'Клиент ответил (что-то сказал)',
+                    3: 'Согласился на встречу (MEETING_KEYWORDS + ответ клиента)',
+                    4: 'Квалифицирован (QUALIFICATION_KEYWORDS + ответ клиента)',
+                }.get(verify_stage, '?'),
+            }, ensure_ascii=False),
+        }
 
     total = 0
     with_dialogue = 0
