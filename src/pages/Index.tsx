@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { loadData, type DashboardData } from '@/lib/dataParser';
 import KpiCard from '@/components/dashboard/KpiCard';
 import FunnelChart from '@/components/dashboard/FunnelChart';
@@ -69,6 +70,7 @@ function ErrorScreen({ error, onRetry }: { error: string; onRetry: () => void })
 
 export default function Index() {
   const [data, setData] = useState<DashboardData | null>(null);
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [tab, setTab] = useState<Tab>('overview');
@@ -123,6 +125,14 @@ export default function Index() {
               </div>
               <button onClick={load} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }} title="Обновить">
                 <Icon name="RefreshCw" size={14} />
+              </button>
+              <button
+                onClick={() => navigate('/case')}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
+                title="Отчёт по тестовому заданию">
+                <Icon name="FileText" size={12} />
+                <span className="hidden sm:inline">Отчёт</span>
               </button>
             </div>
           </div>
