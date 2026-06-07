@@ -5,8 +5,6 @@ interface Props {
 }
 
 export default function AbTestCard({ data }: Props) {
-  const stage1Count = data.funnel[1]?.count ?? 0;
-  const stage0Count = data.funnel[0]?.count ?? 0;
   const greetingDropPct = data.funnel[1]?.dropPct ?? 0;
   const silentPct = data.total > 0 ? ((data.total - data.withDialogue) / data.total * 100) : 0;
 

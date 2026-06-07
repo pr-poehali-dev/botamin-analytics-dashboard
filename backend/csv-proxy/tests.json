@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Возвращает агрегаты по звонкам",
+      "method": "GET",
+      "path": "/?sheet_id=18lZSxc5G6lhj9hoDgVZKMtrYDYzr2tJ692txym3L7oI&gid=1903196005",
+      "expectedStatus": 200,
+      "expectedBody": {"total": 1},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

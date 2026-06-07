@@ -1,8 +1,8 @@
 import { useState } from 'react';
-import type { CallRecord } from '@/lib/dataParser';
+import type { SampleRecord } from '@/lib/dataParser';
 
 interface Props {
-  records: CallRecord[];
+  records: SampleRecord[];
 }
 
 const STAGE_LABELS = ['Нет диалога', 'Отказ', 'Слушал', 'Встреча', 'Лид'];
