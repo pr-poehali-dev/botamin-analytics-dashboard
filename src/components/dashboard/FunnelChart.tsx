@@ -3,11 +3,13 @@ import type { FunnelData } from '@/lib/dataParser';
 interface Props {
   data: FunnelData[];
   total: number;
+  overallCR: number;
+  leads: number;
 }
 
 const STAGE_ICONS = ['📵', '🚫', '🔄', '📅', '✅'];
 
-export default function FunnelChart({ data, total }: Props) {
+export default function FunnelChart({ data, total, overallCR, leads }: Props) {
   const maxCount = total;
 
   return (
@@ -72,11 +74,16 @@ export default function FunnelChart({ data, total }: Props) {
 
       <div className="mt-5 pt-4 border-t" style={{ borderColor: 'var(--border-default)' }}>
         <div className="flex items-center justify-between">
-          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
-            Итоговая конверсия (Этап 0 → Лид)
-          </span>
+          <div>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              Итоговая конверсия (все звонки → лид)
+            </span>
+            <span className="text-xs ml-2" style={{ color: 'var(--text-muted)' }}>
+              {leads.toLocaleString('ru-RU')} лидов из {total.toLocaleString('ru-RU')}
+            </span>
+          </div>
           <span className="text-lg font-bold font-mono-data" style={{ color: 'var(--brand-green)' }}>
-            {total > 0 ? ((data[data.length - 1].count / total) * 100).toFixed(2) : '0.00'}%
+            {overallCR.toFixed(2)}%
           </span>
         </div>
       </div>

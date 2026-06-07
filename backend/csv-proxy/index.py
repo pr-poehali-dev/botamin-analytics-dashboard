@@ -217,13 +217,18 @@ def handler(event: dict, context) -> dict:
             })
 
     avg_dur = round(duration_total / total) if total > 0 else 0
+    # Лид = stage >= 3 (согласился на встречу ИЛИ квалифицирован)
     leads = stage_counts[3] + stage_counts[4]
 
+    # Воронка: каждый уровень — подмножество предыдущего.
+    # Этап 3 = stage>=3 (встреча ИЛИ квалификация) = leads = 373
+    # Этап 4 = только квалифицирован (stage==4) = 315 — подмножество этапа 3
+    # overallCR = leads/total — считается по этапу 3 (все лиды)
     funnel = [
         {'stage': 0, 'label': 'Все звонки',            'count': total},
         {'stage': 1, 'label': 'Вступили в диалог',      'count': total - stage_counts[0]},
         {'stage': 2, 'label': 'Клиент ответил',         'count': stage_counts[2] + stage_counts[3] + stage_counts[4]},
-        {'stage': 3, 'label': 'Согласился на встречу',  'count': stage_counts[3] + stage_counts[4]},
+        {'stage': 3, 'label': 'Согласился на встречу',  'count': leads},
         {'stage': 4, 'label': 'Квалифицирован (лид)',   'count': stage_counts[4]},
     ]
     colors = ['#555555', '#ff4444', '#ff8c00', '#00aaff', '#00ff88']

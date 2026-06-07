@@ -203,7 +203,7 @@ export default function Index() {
             {/* Воронка + длительность */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
               <div className="lg:col-span-2">
-                <FunnelChart data={data.funnel} total={data.total} />
+                <FunnelChart data={data.funnel} total={data.total} overallCR={data.overallCR} leads={data.leads} />
               </div>
               <DurationChart buckets={data.durationBuckets} endReasons={data.endReasonBreakdown} />
             </div>
@@ -241,7 +241,7 @@ export default function Index() {
               </p>
             </div>
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <FunnelChart data={data.funnel} total={data.total} />
+              <FunnelChart data={data.funnel} total={data.total} overallCR={data.overallCR} leads={data.leads} />
               <div className="space-y-3">
                 {data.funnel.map((item, idx) => (
                   <div key={idx} className="card-glass p-4 animate-fade-in"
