@@ -8,10 +8,20 @@ export default function AbTestCard({ data }: Props) {
   const greetingDropPct = data.funnel[1]?.dropPct ?? 0;
   const silentPct = data.total > 0 ? ((data.total - data.withDialogue) / data.total * 100) : 0;
 
-  const bottleneck = greetingDropPct > 30
-    ? 'greeting'
+  // Выбираем узкое место по максимальным потерям в воронке
+  // funnel[2].dropPct = потери "Вступили в диалог → Клиент ответил" (этап 1→2)
+  // funnel[3].dropPct = потери "Клиент ответил → Встреча" (этап 2→3)
+  const responseDropPct = data.funnel[2]?.dropPct ?? 0;
+  const meetingDropPct  = data.funnel[3]?.dropPct ?? 0;
+
+  const bottleneck = responseDropPct > meetingDropPct && responseDropPct > greetingDropPct
+    ? 'offer'        // Клиент ответил, но не дошёл до встречи — слабый оффер
+    : meetingDropPct > greetingDropPct
+    ? 'offer'        // Главные потери на переходе к встрече
+    : greetingDropPct > 30
+    ? 'greeting'     // Много уходят на приветствии
     : silentPct > 40
-    ? 'silent'
+    ? 'silent'       // Много сбросов до слова
     : 'offer';
 
   const hypotheses = {

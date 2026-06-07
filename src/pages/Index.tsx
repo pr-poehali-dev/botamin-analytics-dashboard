@@ -301,7 +301,7 @@ export default function Index() {
               </p>
             </div>
             <PhrasesPanel refusalPhrases={data.refusalPhrases} successPhrases={data.successPhrases} />
-            <DialoguesTable records={data.records} />
+            <DialoguesTable records={data.records} totalAll={data.total} />
           </div>
         )}
 
@@ -336,12 +336,12 @@ export default function Index() {
               <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Что увидели в данных</h3>
               <div className="space-y-2.5 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
                 <p>
-                  <span className="font-semibold" style={{ color: 'var(--brand-green)' }}>1. Охват 73% — хорошо.</span>{' '}
+                  <span className="font-semibold" style={{ color: 'var(--brand-green)' }}>1. Охват {(100 - silentPct).toFixed(1)}% — хорошо.</span>{' '}
                   {data.withDialogue.toLocaleString('ru-RU')} из {data.total.toLocaleString('ru-RU')} звонков имеют транскрипт.
                   Остальные {sc[0].toLocaleString('ru-RU')} — технический сброс до первого слова.
                 </p>
                 <p>
-                  <span className="font-semibold" style={{ color: '#ff8c00' }}>2. Клиент отвечает в {sc[2] + sc[3] + sc[4]} случаях.</span>{' '}
+                  <span className="font-semibold" style={{ color: '#ff8c00' }}>2. Клиент отвечает в {(sc[2] + sc[3] + sc[4]).toLocaleString('ru-RU')} случаях.</span>{' '}
                   Это {data.total > 0 ? (((sc[2]+sc[3]+sc[4])/data.total)*100).toFixed(1) : 0}% от всех звонков.
                   Большинство (этап 1 = {sc[1].toLocaleString('ru-RU')}) — бот говорил, но клиент не ответил.
                 </p>

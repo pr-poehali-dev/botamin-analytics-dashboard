@@ -3,6 +3,7 @@ import type { SampleRecord } from '@/lib/dataParser';
 
 interface Props {
   records: SampleRecord[];
+  totalAll?: number;
 }
 
 const STAGE_LABELS = ['Нет диалога', 'Отказ', 'Слушал', 'Встреча', 'Лид'];
@@ -15,7 +16,7 @@ function formatDuration(sec: number): string {
   return `${m}:${s.toString().padStart(2, '0')}`;
 }
 
-export default function DialoguesTable({ records }: Props) {
+export default function DialoguesTable({ records, totalAll }: Props) {
   const [filter, setFilter] = useState(0);
   const [search, setSearch] = useState('');
   const [expanded, setExpanded] = useState<string | null>(null);
@@ -38,7 +39,8 @@ export default function DialoguesTable({ records }: Props) {
             Диалоги
           </h3>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            {total.toLocaleString('ru-RU')} из {records.length.toLocaleString('ru-RU')}
+            показано {total.toLocaleString('ru-RU')} из {records.length.toLocaleString('ru-RU')} сэмпла
+            {totalAll ? ` (всего в базе: ${totalAll.toLocaleString('ru-RU')})` : ''}
           </p>
         </div>
         <div className="sm:ml-auto flex flex-wrap gap-2">
