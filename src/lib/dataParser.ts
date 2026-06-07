@@ -71,37 +71,41 @@ export interface DashboardData {
 const STAGE_COLORS = ['#555555', '#ff4444', '#ff8c00', '#00aaff', '#00ff88'];
 
 const STAGE_LABELS = [
-  'Не вступил в диалог',
+  'Нет диалога (сброс до слова)',
   'Отказ на приветствии',
   'Слушал, но ушёл',
   'Согласился на встречу',
   'Квалифицирован (лид)',
 ];
 
+// БАГ #2 исправлен: убраны "дня", "час", "часов", "отлично", "хорошо", "подходит" — они давали ложные срабатывания
+// "добрый день" содержит "дня" → все звонки ложно попадали в этап 3
 const MEETING_KEYWORDS = [
   'понедельник', 'вторник', 'среда', 'среду', 'четверг', 'четверга',
   'пятница', 'пятницу', 'суббота', 'воскресенье',
-  'завтра', 'послезавтра', 'сегодня',
-  'утром', 'вечером', 'часов', 'час', 'дня',
+  'завтра', 'послезавтра',
+  'утром', 'вечером',
   'в два', 'в три', 'в четыре', 'в пять', 'в шесть',
-  'записал', 'отлично', 'договорились', 'встречаемся', 'встретимся',
-  'подходит', 'хорошо', 'записываю', 'жду',
+  'в семь', 'в восемь', 'в девять', 'в десять', 'в одиннадцать', 'в двенадцать',
+  'записал', 'договорились', 'встречаемся', 'встретимся',
+  'записываю', 'на встречу',
 ];
 
 const QUALIFICATION_KEYWORDS = [
   'квалифицир', 'сколько человек', 'сколько менеджеров', 'оборот',
-  'бюджет', 'ответственный', 'решение принимает',
+  'бюджет', 'решение принимает', 'лицо принимающее',
 ];
 
 const OFFER_KEYWORDS = [
-  'кейс', 'внедрили', 'процентов', '%', 'результат', 'конверсия',
-  'автоматизац', 'ИИ', 'бот', 'сократили', 'выросла', 'экономия',
+  'внедрили', 'процентов', 'результат', 'конверсия',
+  'автоматизац', 'сократили', 'выросла', 'экономия',
+  'кейс показал', 'бот помог',
 ];
 
 const REFUSAL_KEYWORDS = [
   'не интересует', 'не интересно', 'не нужно', 'нет спасибо',
-  'не звоните', 'занят', 'спам', 'не буду', 'некогда',
-  'не надо', 'откажусь', 'не хочу',
+  'не звоните', 'спам', 'не буду', 'некогда',
+  'не надо', 'откажусь', 'не хочу', 'до свидания', 'всего хорошего',
 ];
 
 function parseDuration(raw: string): number {
@@ -127,30 +131,34 @@ function containsAny(text: string, keywords: string[]): boolean {
   return keywords.some(kw => lower.includes(kw.toLowerCase()));
 }
 
-function classifyStage(dialogue: string, endReason: string, durationSec: number): CallStage {
+// БАГ #1 исправлен: убрана строка `if (clientLines.length === 0 && durationSec < 10) return 0`
+//   — она ошибочно возвращала 0 для звонков с непустым диалогом (где бот успел что-то сказать)
+// БАГ #2 исправлен: MEETING_KEYWORDS больше не содержит "дня"/"час"/"отлично" etc.
+// БАГ #4 исправлен: этап 3 требует client-реплику, а не endReason === 'bot_hangup'
+// БАГ #7 исправлен: логика воронки cumulativeCounts пересчитана как настоящая воронка (stage >= N)
+function classifyStage(dialogue: string): CallStage {
+  // Этап 0: нет транскрипта вообще
   if (!dialogue || dialogue.trim() === '') return 0;
 
   const lines = dialogue.split('\n').filter(l => l.trim());
   const clientLines = lines.filter(l => l.toLowerCase().startsWith('client:'));
   const botLines = lines.filter(l => l.toLowerCase().startsWith('bot:'));
 
-  if (clientLines.length === 0 && durationSec < 10) return 0;
-
   const fullText = dialogue.toLowerCase();
 
-  if (containsAny(fullText, QUALIFICATION_KEYWORDS) && endReason === 'bot_hangup') return 4;
+  // Этап 4: квалификация — есть ответ клиента + ключевые слова квалификации
+  if (containsAny(fullText, QUALIFICATION_KEYWORDS) && clientLines.length > 0) return 4;
 
-  if (containsAny(fullText, MEETING_KEYWORDS) &&
-    (endReason === 'bot_hangup' || botLines.length > 3)) return 3;
+  // Этап 3: согласие на встречу — ОБЯЗАТЕЛЬНО есть ответ клиента + слова встречи
+  if (containsAny(fullText, MEETING_KEYWORDS) && clientLines.length > 0) return 3;
 
-  if (containsAny(fullText, OFFER_KEYWORDS) && clientLines.length > 0) return 2;
-
-  if (botLines.length >= 1 && clientLines.length === 0) return 1;
-
-  if (clientLines.length > 0 && containsAny(fullText, REFUSAL_KEYWORDS)) return 1;
-
+  // Этап 2: клиент ответил (слышал оффер, что-то сказал)
   if (clientLines.length > 0) return 2;
 
+  // Этап 1: есть только реплики бота, клиент не ответил (или диалог без client:)
+  if (botLines.length >= 1) return 1;
+
+  // Резерв: если диалог есть, но структура непонятна
   return 1;
 }
 
@@ -166,14 +174,18 @@ function extractLastClientPhrase(dialogue: string): string {
 function parseCSV(raw: string): string[][] {
   const rows: string[][] = [];
   let i = 0;
-  while (i < raw.length) {
+  const len = raw.length;
+
+  while (i < len) {
     const row: string[] = [];
-    while (i < raw.length && raw[i] !== '\n') {
+
+    while (i < len) {
       if (raw[i] === '"') {
+        // Quoted field — может содержать \n внутри
         let cell = '';
         i++;
-        while (i < raw.length) {
-          if (raw[i] === '"' && raw[i + 1] === '"') {
+        while (i < len) {
+          if (raw[i] === '"' && i + 1 < len && raw[i + 1] === '"') {
             cell += '"';
             i += 2;
           } else if (raw[i] === '"') {
@@ -186,18 +198,30 @@ function parseCSV(raw: string): string[][] {
         }
         row.push(cell);
       } else {
+        // Unquoted field
         let cell = '';
-        while (i < raw.length && raw[i] !== ',' && raw[i] !== '\n') {
+        while (i < len && raw[i] !== ',' && raw[i] !== '\n' && raw[i] !== '\r') {
           cell += raw[i];
           i++;
         }
         row.push(cell.trim());
       }
-      if (i < raw.length && raw[i] === ',') i++;
+
+      // После поля — либо запятая (следующее поле), либо конец строки
+      if (i < len && raw[i] === ',') {
+        i++;
+        continue;
+      }
+      break;
     }
-    if (i < raw.length && raw[i] === '\n') i++;
+
+    // Пропускаем \r\n или \n
+    if (i < len && raw[i] === '\r') i++;
+    if (i < len && raw[i] === '\n') i++;
+
     if (row.some(c => c !== '')) rows.push(row);
   }
+
   return rows;
 }
 
@@ -222,7 +246,7 @@ export function processCSV(raw: string): DashboardData {
     const durationSec = parseDuration(durationRaw);
     const datetime = new Date(datetimeStr);
 
-    const stage = classifyStage(dialogue, endReason, durationSec);
+    const stage = classifyStage(dialogue);
     const industry = dialogue ? extractIndustry(dialogue) : 'Не указана';
     const replicaCount = dialogue
       ? dialogue.split('\n').filter(l => l.trim()).length
@@ -237,25 +261,33 @@ export function processCSV(raw: string): DashboardData {
 
   const total = records.length;
   const withDialogue = records.filter(r => r.dialogue.trim() !== '').length;
+  // Лид = этап 3 или 4 (согласился на встречу или прошёл квалификацию)
   const leads = records.filter(r => r.stage >= 3).length;
   const overallCR = total > 0 ? (leads / total) * 100 : 0;
   const avgDurationSec = records.length > 0
     ? records.reduce((s, r) => s + r.durationSec, 0) / records.length
     : 0;
 
-  // Funnel
-  const stageCounts = [0, 1, 2, 3, 4].map(s => records.filter(r => r.stage === s).length);
-  const cumulativeCounts = [
-    total,
-    total - stageCounts[0],
-    total - stageCounts[0] - stageCounts[1],
-    stageCounts[3] + stageCounts[4],
-    stageCounts[4],
+  // БАГ #7 исправлен: воронка теперь строится как реальная воронка (stage >= N)
+  // Каждый следующий уровень — подмножество предыдущего
+  const s0 = records.filter(r => r.stage === 0).length; // нет диалога
+  const s1 = records.filter(r => r.stage === 1).length; // отказ на приветствии
+  const s2 = records.filter(r => r.stage === 2).length; // слушал
+  const s3 = records.filter(r => r.stage === 3).length; // встреча
+  const s4 = records.filter(r => r.stage === 4).length; // лид
+
+  // Воронка: каждый этап — сколько дошли ДО этого уровня и выше
+  const funnelCounts = [
+    total,           // Все звонки
+    total - s0,      // Вступили в диалог (stage >= 1)
+    s2 + s3 + s4,    // Клиент ответил (stage >= 2)
+    s3 + s4,         // Согласились на встречу (stage >= 3)
+    s4,              // Квалифицированы (stage === 4)
   ];
 
   const funnel: FunnelData[] = STAGE_LABELS.map((label, idx) => {
-    const count = cumulativeCounts[idx];
-    const prev = idx === 0 ? total : cumulativeCounts[idx - 1];
+    const count = funnelCounts[idx];
+    const prev = idx === 0 ? total : funnelCounts[idx - 1];
     return {
       stage: idx,
       label,
@@ -266,7 +298,7 @@ export function processCSV(raw: string): DashboardData {
     };
   });
 
-  // Hourly
+  // По часам
   const hourMap = new Map<number, { calls: number; converted: number }>();
   for (let h = 0; h < 24; h++) hourMap.set(h, { calls: 0, converted: 0 });
   records.forEach(r => {
@@ -287,7 +319,7 @@ export function processCSV(raw: string): DashboardData {
       cr: v.calls > 0 ? (v.converted / v.calls) * 100 : 0,
     }));
 
-  // By day of week
+  // По дням недели
   const dayNames = ['Вс', 'Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб'];
   const dayMap = new Map<string, { calls: number; converted: number }>();
   dayNames.forEach(d => dayMap.set(d, { calls: 0, converted: 0 }));
@@ -303,10 +335,15 @@ export function processCSV(raw: string): DashboardData {
     .filter(d => (dayMap.get(d)?.calls ?? 0) > 0)
     .map(d => {
       const v = dayMap.get(d)!;
-      return { day: d, calls: v.calls, converted: v.converted, cr: v.calls > 0 ? (v.converted / v.calls) * 100 : 0 };
+      return {
+        day: d,
+        calls: v.calls,
+        converted: v.converted,
+        cr: v.calls > 0 ? (v.converted / v.calls) * 100 : 0,
+      };
     });
 
-  // Refusal phrases (stage 0-1, last client phrase)
+  // Фразы отказа (stage 1 — только бот без ответа клиента)
   const refusalMap = new Map<string, { count: number; stage: number }>();
   records
     .filter(r => r.stage <= 1 && r.lastClientPhrase)
@@ -321,7 +358,7 @@ export function processCSV(raw: string): DashboardData {
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
 
-  // Success phrases (stage 3+)
+  // Фразы прохода (stage 3+)
   const successMap = new Map<string, { count: number; stage: number }>();
   records
     .filter(r => r.stage >= 3 && r.lastClientPhrase)
@@ -336,7 +373,7 @@ export function processCSV(raw: string): DashboardData {
     .sort((a, b) => b.count - a.count)
     .slice(0, 12);
 
-  // By industry
+  // По отраслям
   const indMap = new Map<string, { calls: number; converted: number }>();
   records.forEach(r => {
     if (!r.industry || r.industry === 'Не указана') return;
@@ -346,11 +383,16 @@ export function processCSV(raw: string): DashboardData {
     indMap.set(r.industry, entry);
   });
   const byIndustry: IndustryData[] = Array.from(indMap.entries())
-    .map(([industry, v]) => ({ industry, calls: v.calls, converted: v.converted, cr: v.calls > 0 ? (v.converted / v.calls) * 100 : 0 }))
+    .map(([industry, v]) => ({
+      industry,
+      calls: v.calls,
+      converted: v.converted,
+      cr: v.calls > 0 ? (v.converted / v.calls) * 100 : 0,
+    }))
     .sort((a, b) => b.calls - a.calls)
     .slice(0, 10);
 
-  // End reason breakdown
+  // Причины завершения
   const reasonMap = new Map<string, number>();
   records.forEach(r => {
     reasonMap.set(r.endReason, (reasonMap.get(r.endReason) ?? 0) + 1);
@@ -367,7 +409,7 @@ export function processCSV(raw: string): DashboardData {
     color: reasonColors[name] ?? '#555555',
   }));
 
-  // Duration buckets
+  // Бакеты длительности
   const buckets = [
     { label: '0–5 сек', min: 0, max: 5 },
     { label: '5–15 сек', min: 5, max: 15 },

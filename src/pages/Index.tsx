@@ -174,6 +174,37 @@ export default function Index() {
               </p>
             </div>
 
+            {/* Блок верификации: сырые числа по этапам и причинам */}
+            <div className="card-glass p-4">
+              <div className="flex items-center gap-2 mb-3">
+                <Icon name="ShieldCheck" size={13} style={{ color: 'var(--brand-green)' }} />
+                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--brand-green)' }}>
+                  Сырые числа — для сверки с таблицей
+                </span>
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-x-6 gap-y-2">
+                {[
+                  { label: 'Всего строк в CSV', val: data.total },
+                  { label: 'С непустым диалогом', val: data.withDialogue },
+                  { label: 'Без диалога (этап 0)', val: data.records.filter(r => r.stage === 0).length },
+                  { label: 'Только бот (этап 1)', val: data.records.filter(r => r.stage === 1).length },
+                  { label: 'Клиент ответил (этап 2)', val: data.records.filter(r => r.stage === 2).length },
+                  { label: 'Согласился на встречу (3)', val: data.records.filter(r => r.stage === 3).length },
+                  { label: 'Квалифицирован (этап 4)', val: data.records.filter(r => r.stage === 4).length },
+                  { label: 'bot_hangup', val: data.records.filter(r => r.endReason === 'bot_hangup').length },
+                  { label: 'client_hangup', val: data.records.filter(r => r.endReason === 'client_hangup').length },
+                  { label: 'Другие причины', val: data.records.filter(r => r.endReason !== 'bot_hangup' && r.endReason !== 'client_hangup').length },
+                  { label: 'Средняя длит. (сек)', val: Math.round(data.avgDurationSec) },
+                  { label: 'Лидов (stage ≥ 3)', val: data.leads },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center justify-between py-1 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+                    <span className="text-xs font-mono-data font-semibold ml-2" style={{ color: 'var(--text-primary)' }}>{row.val.toLocaleString('ru-RU')}</span>
+                  </div>
+                ))}
+              </div>
+            </div>
+
             {/* KPI row */}
             <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
               <KpiCard label="Всего звонков" value={data.total.toLocaleString('ru-RU')} sub="за неделю" delay={0} />
