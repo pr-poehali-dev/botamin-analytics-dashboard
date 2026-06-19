@@ -93,10 +93,14 @@ def parse_transcript(op: dict) -> dict:
     chunks     = op.get('response', {}).get('chunks', [])
     full_text  = []
     replicas   = []
-    # Канал 1 = оператор (менеджер), канал 2 = клиент
-    # SpeechKit дублирует стерео — берём только канал 1 для оператора и канал 2 для клиента
-    # Фильтруем дубли: одинаковый текст в ту же секунду на разных каналах
+    # Определяем спикеров через speakerTag (диаризация) или channelTag (стерео)
+    # speakerTag — более точный: 1=первый голос, 2=второй голос в записи
+    # Первый голос в записи обычно клиент (они отвечают), второй — наш менеджер
     seen = set()
+    speaker_map: dict = {}  # speakerTag -> 'operator'/'client'
+
+    # Первый проход: собираем все реплики с метаданными
+    raw = []
     for chunk in chunks:
         alts = chunk.get('alternatives', [])
         if not alts:
@@ -105,22 +109,41 @@ def parse_transcript(op: dict) -> dict:
         text = best.get('text', '').strip()
         if not text:
             continue
-        channel = chunk.get('channelTag', '1')
-        start   = 0.0
-        words   = best.get('words', [])
+        words = best.get('words', [])
+        start = 0.0
+        speaker_tag = None
         if words:
             st = words[0].get('startTime', '0s')
             start = float(str(st).replace('s', ''))
-        start_r = round(start, 1)
-        # Ключ дедупликации: текст + время (игнорируем канал)
-        key = (start_r, text[:40])
+            speaker_tag = words[0].get('speakerTag')
+        channel = chunk.get('channelTag', '1')
+        raw.append({'text': text, 'start': round(start, 1), 'speaker_tag': speaker_tag, 'channel': channel})
+
+    # Определяем кто есть кто по speakerTag
+    # Первый встреченный speakerTag = клиент (они отвечают), второй = оператор
+    use_speaker_tag = any(r['speaker_tag'] is not None for r in raw)
+    if use_speaker_tag:
+        for r in raw:
+            tag = r['speaker_tag']
+            if tag is not None and tag not in speaker_map:
+                if not speaker_map:
+                    speaker_map[tag] = 'client'   # первый голос = клиент
+                else:
+                    speaker_map[tag] = 'operator'  # второй голос = наш менеджер
+
+    for r in raw:
+        key = (r['start'], r['text'][:40])
         if key in seen:
             continue
         seen.add(key)
-        speaker = 'client' if channel == '1' else 'operator'
+        if use_speaker_tag and r['speaker_tag'] is not None:
+            speaker = speaker_map.get(r['speaker_tag'], 'client')
+        else:
+            # Fallback: канал 1=клиент, канал 2=оператор
+            speaker = 'client' if r['channel'] == '1' else 'operator'
         label = 'Оператор' if speaker == 'operator' else 'Клиент'
-        replicas.append({'speaker': speaker, 'speaker_label': label, 'text': text, 'start_time': start_r})
-        full_text.append(f'{label}: {text}')
+        replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
+        full_text.append(f'{label}: {r["text"]}')
     replicas.sort(key=lambda r: r['start_time'])
 
     # Определяем автоответчик: если в начале идут только реплики клиента
