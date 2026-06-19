@@ -1,5 +1,5 @@
 """
-Анализирует транскрипт звонка через Google Gemini 1.5 Flash.
+Анализирует транскрипт звонка через Mistral AI.
 Сначала проверяет кэш в БД — если анализ уже есть, возвращает его.
 Иначе анализирует и сохраняет результат в БД.
 """
@@ -8,17 +8,12 @@ import os
 import urllib.request
 import psycopg2
 
-GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
-DATABASE_URL   = os.environ.get('DATABASE_URL', '')
-SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
+MISTRAL_API_KEY = os.environ.get('MISTRAL_API_KEY', '')
+DATABASE_URL    = os.environ.get('DATABASE_URL', '')
+SCHEMA          = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
 
-GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/'
-# Пробуем модели по очереди при rate limit
-GEMINI_MODELS = [
-    'gemini-2.0-flash-lite',
-    'gemini-2.0-flash',
-    'gemini-1.5-flash-latest',
-]
+MISTRAL_URL   = 'https://api.mistral.ai/v1/chat/completions'
+MISTRAL_MODEL = 'mistral-small-latest'
 
 SYSTEM_PROMPT = """Ты эксперт по анализу звонков колл-центра рекламного агентства СайтАктив.
 Анализируй транскрипты звонков и возвращай ТОЛЬКО валидный JSON без markdown-обёртки и без ```json.
@@ -139,46 +134,40 @@ def save_to_db(comm_id: str, a: dict):
 
 
 def analyze(transcript: str, duration_sec: int) -> dict:
-    minutes = duration_sec // 60
-    seconds = duration_sec % 60
+    minutes   = duration_sec // 60
+    seconds   = duration_sec % 60
     user_text = f"Длительность звонка: {minutes}м {seconds}с\n\nТранскрипт:\n{transcript}"
 
     body = {
-        'system_instruction': {'parts': [{'text': SYSTEM_PROMPT}]},
-        'contents': [{'parts': [{'text': user_text}]}],
-        'generationConfig': {
-            'temperature': 0.1,
-            'maxOutputTokens': 1024,
-        },
+        'model': MISTRAL_MODEL,
+        'messages': [
+            {'role': 'system', 'content': SYSTEM_PROMPT},
+            {'role': 'user',   'content': user_text},
+        ],
+        'temperature':  0.1,
+        'max_tokens':   1024,
+        'response_format': {'type': 'json_object'},
     }
 
-    result = None
-    for model in GEMINI_MODELS:
-        url = f'{GEMINI_BASE}{model}:generateContent?key={GEMINI_API_KEY}'
-        req = urllib.request.Request(
-            url,
-            data=json.dumps(body).encode(),
-            headers={'Content-Type': 'application/json'},
-            method='POST',
-        )
-        try:
-            with urllib.request.urlopen(req, timeout=30) as resp:
-                result = json.loads(resp.read())
-            print(f'[GEMINI] used model={model}')
-            break
-        except urllib.error.HTTPError as e:
-            print(f'[GEMINI] model={model} error {e.code}, trying next')
-            continue
+    req = urllib.request.Request(
+        MISTRAL_URL,
+        data=json.dumps(body).encode(),
+        headers={
+            'Authorization': f'Bearer {MISTRAL_API_KEY}',
+            'Content-Type':  'application/json',
+        },
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        result = json.loads(resp.read())
 
-    if result is None:
-        raise Exception('Все модели Gemini недоступны (rate limit)')
-
-    content = result['candidates'][0]['content']['parts'][0]['text'].strip()
+    print(f'[MISTRAL] model={MISTRAL_MODEL} tokens={result.get("usage", {}).get("total_tokens")}')
+    content = result['choices'][0]['message']['content'].strip()
 
     # Убираем markdown-обёртку если вдруг есть
     if content.startswith('```'):
-        lines = content.split('\n')
-        lines = [l for l in lines if not l.strip().startswith('```')]
+        lines   = content.split('\n')
+        lines   = [l for l in lines if not l.strip().startswith('```')]
         content = '\n'.join(lines).strip()
 
     return json.loads(content)
@@ -196,9 +185,9 @@ def handler(event: dict, context) -> dict:
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
-    if not GEMINI_API_KEY:
+    if not MISTRAL_API_KEY:
         return {'statusCode': 500, 'headers': CORS,
-                'body': json.dumps({'error': 'GEMINI_API_KEY не настроен'}, ensure_ascii=False)}
+                'body': json.dumps({'error': 'MISTRAL_API_KEY не настроен'}, ensure_ascii=False)}
 
     body_raw = event.get('body', '{}') or '{}'
     body = json.loads(body_raw) if isinstance(body_raw, str) else (body_raw or {})
