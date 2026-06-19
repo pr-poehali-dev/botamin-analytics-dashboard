@@ -51,7 +51,7 @@ function KPI({ icon, label, value, sub, accent }: {
   );
 }
 
-export default function Dashboard({ data, site, onReset }: { data: CallsData; site?: string; onReset: () => void }) {
+export default function Dashboard({ data, site, onReset, onLogout }: { data: CallsData; site?: string; onReset: () => void; onLogout?: () => void }) {
   const [tab, setTab] = useState<Tab>('overview');
 
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
@@ -88,6 +88,14 @@ export default function Dashboard({ data, site, onReset }: { data: CallsData; si
                 <Icon name="RefreshCw" size={12} />
                 <span className="hidden sm:inline">Новый анализ</span>
               </button>
+              {onLogout && (
+                <button onClick={onLogout}
+                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
+                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
+                  <Icon name="LogOut" size={12} />
+                  <span className="hidden sm:inline">Выйти</span>
+                </button>
+              )}
             </div>
           </div>
 

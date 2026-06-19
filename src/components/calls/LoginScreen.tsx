@@ -1,10 +1,10 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
+import { loadSite } from '@/lib/session';
 
 interface Props {
   onLogin: (site: string) => void;
 }
-
 
 function normalizeSite(raw: string): string {
   return raw
@@ -16,7 +16,7 @@ function normalizeSite(raw: string): string {
 }
 
 export default function LoginScreen({ onLogin }: Props) {
-  const [value, setValue] = useState('');
+  const [value, setValue] = useState(loadSite);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
