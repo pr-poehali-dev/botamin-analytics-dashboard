@@ -54,6 +54,7 @@ function KPI({ icon, label, value, sub, accent }: {
 
 export default function Dashboard({ data, site, autoStart, onReset, onLogout }: { data: CallsData; site?: string; autoStart?: boolean; onReset: () => void; onLogout?: () => void }) {
   const [tab, setTab] = useState<Tab>('overview');
+  const [transcriptionCommId, setTranscriptionCommId] = useState<string | undefined>();
 
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
   const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
@@ -248,14 +249,14 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
         {/* ── ТРАНСКРИБАЦИЯ ── */}
         {tab === 'transcription' && (
           <div className="animate-fade-in">
-            <TranscriptionTab calls={data.calls} />
+            <TranscriptionTab calls={data.calls} initialCommId={transcriptionCommId} />
           </div>
         )}
 
         {/* ── АНАЛИТИКА ИИ ── */}
         {tab === 'ai-insights' && (
           <div className="animate-fade-in">
-            <AiInsightsTab onGoToTranscription={(commId) => { setTab('transcription'); }} />
+            <AiInsightsTab onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} />
           </div>
         )}
 

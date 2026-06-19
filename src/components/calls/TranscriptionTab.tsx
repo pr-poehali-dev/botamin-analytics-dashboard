@@ -10,7 +10,7 @@ import CallTranscriptView from '@/components/calls/CallTranscriptView';
 
 type DoneMap = Record<string, { replica_count: number; operator_replicas: number; client_replicas: number }>;
 
-export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
+export default function TranscriptionTab({ calls, initialCommId }: { calls: CallRecord[]; initialCommId?: string }) {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [result, setResult] = useState<TranscriptResult | null>(null);
   const LS_KEY = 'transcription_done_map';
@@ -53,6 +53,14 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
       })
       .catch(() => {});
   }, []);
+
+  // Автооткрытие звонка если передан initialCommId
+  useEffect(() => {
+    if (!initialCommId || !calls.length) return;
+    const call = calls.find(c => c.comm_id === initialCommId);
+    if (call) handleTranscribe(call);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialCommId, calls]);
 
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
