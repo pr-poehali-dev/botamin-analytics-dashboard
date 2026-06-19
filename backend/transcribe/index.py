@@ -123,6 +123,8 @@ def parse_transcript(op: dict) -> dict:
     channels = set(r['channel'] for r in raw)
     tags = set(r['speaker_tag'] for r in raw if r['speaker_tag'] is not None)
     print(f'[DEBUG] channels={channels} speakerTags={tags}')
+    for r in raw:
+        print(f'[DEBUG] ch={r["channel"]} t={r["start"]} text={r["text"][:60]}')
 
     # Фразы-маркеры НАШЕГО оператора (Рустам, менеджер по продажам)
     our_operator_markers = [
@@ -138,26 +140,54 @@ def parse_transcript(op: dict) -> dict:
     has_both_channels = '1' in channels and '2' in channels
 
     if has_both_channels:
-        # Стерео-запись: определяем какой канал — наш оператор по маркерам
-        # SpeechKit дублирует реплики — одна реплика может быть на обоих каналах
-        # Считаем на каком канале больше маркеров нашего оператора
-        op_score = {'1': 0, '2': 0}
+        # Стерео: SpeechKit иногда дублирует реплику на оба канала
+        # Группируем по времени начала — если реплика на ОБОИХ каналах, это дубль
+        # Если только на одном — это уникальная реплика этого спикера
+        from collections import defaultdict
+        by_time: dict = defaultdict(list)
         for r in raw:
-            if is_our_operator(r['text']):
-                op_score[r['channel']] = op_score.get(r['channel'], 0) + 1
-        # Канал с большим score = наш оператор
+            by_time[r['start']].append(r)
+
+        # Определяем оператора: ищем уникальные реплики (только на одном канале)
+        # с маркерами нашего оператора — это его канал
+        op_score = {'1': 0, '2': 0}
+        for time_group in by_time.values():
+            if len(time_group) == 1:
+                r = time_group[0]
+                if is_our_operator(r['text']):
+                    op_score[r['channel']] = op_score.get(r['channel'], 0) + 2
+            # Дубль — проверяем оба
+            for r in time_group:
+                if is_our_operator(r['text']):
+                    op_score[r['channel']] = op_score.get(r['channel'], 0) + 1
+
         operator_channel = '1' if op_score.get('1', 0) >= op_score.get('2', 0) else '2'
         client_channel = '2' if operator_channel == '1' else '1'
         print(f'[DEBUG] op_score={op_score} operator_channel={operator_channel}')
 
-        # Дедупликация: реплики дублируются на оба канала — берём уникальные по времени+тексту
-        # но спикера определяем по каналу
-        for r in raw:
+        # Формируем реплики: для каждого момента времени берём УНИКАЛЬНЫЕ (не дубли)
+        # Дубли (одинаковое время, похожий текст на обоих каналах) — берём только с operator_channel
+        for start_time, group in sorted(by_time.items()):
+            if len(group) == 1:
+                # Уникальная реплика — спикер по каналу
+                r = group[0]
+                speaker = 'operator' if r['channel'] == operator_channel else 'client'
+            else:
+                # Дубль — берём версию с operator_channel как оператора, с client_channel как клиента
+                # Но это одна реплика произнесённая одним человеком — берём только одну
+                # Определяем спикера: если в group есть хоть одна с operator_channel — оператор
+                channels_in_group = {r['channel'] for r in group}
+                if operator_channel in channels_in_group and client_channel in channels_in_group:
+                    # Реплика на обоих каналах = это оператор (его голос пишется на оба канала)
+                    speaker = 'operator'
+                else:
+                    speaker = 'operator' if operator_channel in channels_in_group else 'client'
+                r = group[0]  # текст одинаковый, берём первый
+
             key = (r['start'], r['text'][:40])
             if key in seen:
                 continue
             seen.add(key)
-            speaker = 'operator' if r['channel'] == operator_channel else 'client'
             label = 'Оператор' if speaker == 'operator' else 'Клиент'
             replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
             full_text.append(f'{label}: {r["text"]}')
