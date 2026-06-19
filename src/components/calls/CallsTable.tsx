@@ -161,8 +161,46 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (_e) { return {}; }
   };
 
-  const [doneMap, setDoneMap] = useState<DoneMap>(loadLocal);
+  const [doneMap, setDoneMap]     = useState<DoneMap>(loadLocal);
   const [modalCall, setModalCall] = useState<CallRecord | null>(null);
+  const [inProgress, setInProgress] = useState<Set<string>>(new Set());
+
+  const transcribeCall = async (call: CallRecord) => {
+    if (!call.record_url || inProgress.has(call.comm_id) || doneMap[call.comm_id]) return;
+    setInProgress(prev => new Set(prev).add(call.comm_id));
+    try {
+      const res  = await fetch(TRANSCRIBE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audio_url:    call.record_url,
+          comm_id:      call.comm_id,
+          date:         call.date,
+          duration:     call.duration,
+          duration_sec: call.duration_sec,
+        }),
+      });
+      const data = await res.json();
+      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+      let result = data;
+      if (data.status === 'processing') {
+        for (let i = 0; i < 15; i++) {
+          await sleep(5000);
+          const poll = await fetch(`${TRANSCRIBE_URL}?comm_id=${call.comm_id}`);
+          result = await poll.json();
+          if (result.status === 'done') break;
+        }
+      }
+      if (result.replica_count > 0 || result.all_ivr) {
+        setDoneMap(prev => {
+          const next = { ...prev, [call.comm_id]: { replica_count: result.replica_count || 0, operator_replicas: result.operator_replicas || 0, client_replicas: result.client_replicas || 0 } };
+          try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch (_e) { /* ignore */ }
+          return next;
+        });
+      }
+    } catch { /* ignore */ }
+    setInProgress(prev => { const n = new Set(prev); n.delete(call.comm_id); return n; });
+  };
 
   const HIDDEN_KEY = 'calls_hidden_ids';
   const loadHidden = (): Set<string> => {
@@ -248,7 +286,8 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
           <div />
         </div>
         {slice.map((c, i) => {
-          const hasTr = !!doneMap[c.comm_id];
+          const hasTr     = !!doneMap[c.comm_id];
+          const isPending = inProgress.has(c.comm_id);
           return (
             <div key={i}
               className="grid gap-2 px-4 py-2.5 text-xs border-b items-center group"
@@ -286,6 +325,18 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
                     style={{ color: 'var(--brand-green)' }}>
                     <Icon name="FileText" size={11} />
                     Открыть
+                  </button>
+                ) : isPending ? (
+                  <span className="flex items-center gap-1" style={{ color: '#ff8c00' }}>
+                    <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#ff8c00' }} />
+                    Идёт…
+                  </span>
+                ) : c.record_url ? (
+                  <button onClick={() => transcribeCall(c)}
+                    className="flex items-center gap-1 transition-opacity hover:opacity-80"
+                    style={{ color: 'var(--text-muted)' }}>
+                    <Icon name="Mic" size={11} />
+                    Транскрибировать
                   </button>
                 ) : (
                   <span style={{ color: 'var(--text-muted)' }}>—</span>
