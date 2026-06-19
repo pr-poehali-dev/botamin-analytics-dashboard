@@ -332,6 +332,10 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
             const isSelected = selectedCall?.comm_id === call.comm_id;
             const durMin = Math.floor(call.duration_sec / 60);
             const durSec = call.duration_sec % 60;
+            const isCached = isSelected && result?.cached;
+            const isDone = isSelected && result?.status === 'done';
+            const isErr = isSelected && result?.status === 'error';
+            const isLoading = isSelected && (result?.status === 'transcribing' || result?.status === 'analyzing');
             return (
               <div key={i}
                 onClick={() => handleTranscribe(call)}
@@ -351,27 +355,21 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
                 <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
                   ID: {call.comm_id || '—'}
                 </div>
-                {isSelected && result && (
+                {isSelected && (
                   <div className="mt-1.5 flex items-center gap-1.5">
-                    {result.status === 'transcribing' && (
+                    {isLoading && (
                       <span className="text-xs flex items-center gap-1" style={{ color: 'var(--brand-green)' }}>
                         <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--brand-green)' }} />
-                        Транскрибирую…
+                        {result?.status === 'analyzing' ? 'Анализирую…' : 'Транскрибирую…'}
                       </span>
                     )}
-                    {result.status === 'analyzing' && (
-                      <span className="text-xs flex items-center gap-1" style={{ color: '#ff8c00' }}>
-                        <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#ff8c00' }} />
-                        Анализирую…
-                      </span>
-                    )}
-                    {result.status === 'done' && (
+                    {isDone && (
                       <span className="text-xs flex items-center gap-1" style={{ color: 'var(--brand-green)' }}>
                         <Icon name="CheckCircle" size={11} />
-                        Готово
+                        {isCached ? 'Из кэша' : 'Готово'}
                       </span>
                     )}
-                    {result.status === 'error' && (
+                    {isErr && (
                       <span className="text-xs flex items-center gap-1" style={{ color: '#ff4444' }}>
                         <Icon name="XCircle" size={11} />
                         Ошибка
@@ -401,8 +399,7 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
                 Выберите звонок
               </p>
               <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Нажмите на звонок слева — он будет транскрибирован через Yandex SpeechKit,<br/>
-                затем проанализирован ИИ
+                Нажмите на звонок слева — откроется транскрипт и ИИ-анализ
               </p>
             </div>
           </div>
