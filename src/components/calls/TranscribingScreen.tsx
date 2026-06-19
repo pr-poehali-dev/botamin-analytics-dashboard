@@ -5,8 +5,10 @@ import Icon from '@/components/ui/icon';
 const TRANSCRIBE_URL = 'https://functions.poehali.dev/1cc0b8dc-c71b-4292-815d-cdae4f93cea8';
 const ANALYZE_URL = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
 
-// Параллельно не больше N запросов
-const CONCURRENCY = 3;
+// Только 1 запрос — Yandex SpeechKit имеет строгий rate limit
+const CONCURRENCY = 1;
+// Задержка между запросами (мс)
+const DELAY_MS = 2000;
 
 type JobStatus = 'waiting' | 'transcribing' | 'analyzing' | 'done' | 'error' | 'skipped';
 
@@ -22,34 +24,48 @@ interface Props {
   onSkip: () => void;
 }
 
-async function transcribeCall(call: CallRecord): Promise<void> {
-  const res = await fetch(TRANSCRIBE_URL, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({
-      audio_url: call.record_url,
-      comm_id: call.comm_id,
-      date: call.date,
-      duration: call.duration,
-      duration_sec: call.duration_sec,
-    }),
-  });
-  const data = await res.json();
-  if (data.error) throw new Error(data.error);
-  if (data.status === 'pending') throw new Error('timeout');
+const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  // Если транскрипт не пустой — анализируем
-  if (data.full_text && data.replica_count > 0) {
-    const res2 = await fetch(ANALYZE_URL, {
+async function transcribeCall(call: CallRecord, retries = 3): Promise<void> {
+  for (let attempt = 0; attempt < retries; attempt++) {
+    if (attempt > 0) await sleep(5000 * attempt); // 5s, 10s при retry
+
+    const res = await fetch(TRANSCRIBE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        transcript: data.full_text,
+        audio_url: call.record_url,
         comm_id: call.comm_id,
+        date: call.date,
+        duration: call.duration,
         duration_sec: call.duration_sec,
       }),
     });
-    await res2.json();
+
+    // 429 — подождать и повторить
+    if (res.status === 429 || res.status === 502) {
+      if (attempt < retries - 1) continue;
+      throw new Error('rate_limit');
+    }
+
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    if (data.status === 'pending') throw new Error('timeout');
+
+    // Если транскрипт не пустой — анализируем
+    if (data.full_text && data.replica_count > 0) {
+      const res2 = await fetch(ANALYZE_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transcript: data.full_text,
+          comm_id: call.comm_id,
+          duration_sec: call.duration_sec,
+        }),
+      });
+      await res2.json();
+    }
+    return; // успех
   }
 }
 
@@ -82,9 +98,9 @@ export default function TranscribingScreen({ data, onDone, onSkip }: Props) {
       updateJob(job.comm_id, { status: 'done' });
     } catch (e) {
       const msg = e instanceof Error ? e.message : 'ошибка';
-      // timeout — помечаем как skipped (CoMagic требует auth для скачивания)
+      const isSkip = msg === 'timeout' || msg === 'rate_limit';
       updateJob(job.comm_id, {
-        status: msg === 'timeout' ? 'skipped' : 'error',
+        status: isSkip ? 'skipped' : 'error',
         error: msg,
       });
     }
@@ -92,7 +108,8 @@ export default function TranscribingScreen({ data, onDone, onSkip }: Props) {
     activeRef.current--;
     doneRef.current++;
 
-    // Запускаем следующий
+    // Пауза перед следующим запросом чтобы не превысить rate limit
+    await sleep(DELAY_MS);
     processNext();
   };
 

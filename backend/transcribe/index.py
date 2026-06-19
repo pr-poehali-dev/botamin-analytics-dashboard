@@ -82,19 +82,26 @@ def save_to_db(comm_id: str, audio_url: str, meta: dict, transcript: dict):
     conn.close()
 
 
-def yandex_request(url: str, method: str = 'GET', body: dict = None) -> dict:
+def yandex_request(url: str, method: str = 'GET', body: dict = None, retries: int = 3) -> dict:
     data = json.dumps(body).encode() if body else None
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={
-            'Authorization': f'Api-Key {YANDEX_API_KEY}',
-            'Content-Type': 'application/json',
-        },
-        method=method,
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        return json.loads(resp.read())
+    for attempt in range(retries):
+        req = urllib.request.Request(
+            url,
+            data=data,
+            headers={
+                'Authorization': f'Api-Key {YANDEX_API_KEY}',
+                'Content-Type': 'application/json',
+            },
+            method=method,
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                return json.loads(resp.read())
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < retries - 1:
+                time.sleep(3 * (attempt + 1))
+                continue
+            raise
 
 
 def start_recognition(audio_url: str) -> str:
