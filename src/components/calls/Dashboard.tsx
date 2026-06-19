@@ -7,13 +7,15 @@ import {
 import CallsTable from '@/components/calls/CallsTable';
 import RecommendationsBlock from '@/components/calls/RecommendationsBlock';
 import TranscriptionTab from '@/components/calls/TranscriptionTab';
+import AiInsightsTab from '@/components/calls/AiInsightsTab';
 
-type Tab = 'overview' | 'calls' | 'transcription' | 'recommendations';
+type Tab = 'overview' | 'calls' | 'transcription' | 'ai-insights' | 'recommendations';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'overview', label: 'Обзор', icon: 'LayoutDashboard' },
   { id: 'calls', label: 'Все звонки', icon: 'PhoneCall' },
   { id: 'transcription', label: 'Транскрибация', icon: 'Mic' },
+  { id: 'ai-insights', label: 'Аналитика ИИ', icon: 'Sparkles' },
   { id: 'recommendations', label: 'Рекомендации', icon: 'Lightbulb' },
 ];
 
@@ -237,6 +239,13 @@ export default function Dashboard({ data, site, onReset }: { data: CallsData; si
         {tab === 'transcription' && (
           <div className="animate-fade-in">
             <TranscriptionTab calls={data.calls} />
+          </div>
+        )}
+
+        {/* ── АНАЛИТИКА ИИ ── */}
+        {tab === 'ai-insights' && (
+          <div className="animate-fade-in">
+            <AiInsightsTab />
           </div>
         )}
 

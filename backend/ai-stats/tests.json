@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Get AI stats",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"empty": true},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
