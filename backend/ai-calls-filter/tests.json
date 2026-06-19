@@ -1,0 +1,6 @@
+{
+  "tests": [
+    { "name": "OPTIONS", "method": "OPTIONS", "path": "/", "expectedStatus": 200 },
+    { "name": "GET target calls", "method": "GET", "path": "/?filter=target", "expectedStatus": 200, "expectedBody": {"filter": "target"}, "bodyMatcher": "partial" }
+  ]
+}

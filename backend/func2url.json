@@ -1,4 +1,5 @@
 {
+  "ai-calls-filter": "https://functions.poehali.dev/1d754dd2-2cc6-4d43-8581-04f8a030693d",
   "ai-recommendations": "https://functions.poehali.dev/8a2bb5b8-5bb9-4e68-889e-b7af1fccdac6",
   "batch-analyze": "https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018",
   "batch-status": "https://functions.poehali.dev/48734b10-f2f6-4ccf-8a66-88dbd3428b59",
