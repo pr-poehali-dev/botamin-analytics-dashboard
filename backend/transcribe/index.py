@@ -172,8 +172,12 @@ def get_cached(comm_id):
     row = cur.fetchone(); cur.close(); conn.close()
     if not row:
         return None
+    replica_count = row[2] or 0
+    # Если данные пустые — не отдаём из кэша, пересчитаем
+    if replica_count == 0:
+        return None
     return {'comm_id': comm_id, 'full_text': row[0] or '', 'replicas': row[1] or [],
-            'replica_count': row[2] or 0, 'operator_replicas': row[3] or 0,
+            'replica_count': replica_count, 'operator_replicas': row[3] or 0,
             'client_replicas': row[4] or 0, 'status': 'done', 'cached': True}
 
 
