@@ -1,8 +1,15 @@
 """
-Транскрибирует аудиозапись через Yandex SpeechKit STT. v4
-Два режима:
-  POST { audio_url, comm_id, ... }            → запускает job, возвращает operation_id
-  GET  ?operation_id=...&comm_id=...&...      → опрашивает статус, при done сохраняет в БД
+Транскрибирует аудиозапись через Yandex SpeechKit STT. v5
+Схема работы:
+  POST { audio_url, comm_id, ... }
+    1. Скачивает аудио с CoMagic
+    2. Загружает во внутренний S3 (bucket.poehali.dev)
+    3. Передаёт S3-ссылку в SpeechKit longRunningRecognize
+    4. Возвращает operation_id для опроса
+
+  GET  ?operation_id=...&comm_id=...
+    5. Опрашивает статус операции
+    6. При done — парсит транскрипт, сохраняет в БД, возвращает результат
 """
 import json
 import os
@@ -10,15 +17,51 @@ import time
 import urllib.request
 import urllib.error
 import psycopg2
+import boto3
+from botocore.exceptions import ClientError
 
 YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY', '')
 DATABASE_URL   = os.environ.get('DATABASE_URL', '')
 SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
-STT_URL        = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
-OPERATION_URL  = 'https://operation.api.cloud.yandex.net/operations/'
+AWS_KEY        = os.environ.get('AWS_ACCESS_KEY_ID', '')
+AWS_SECRET     = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
+
+STT_URL       = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
+OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
+S3_ENDPOINT   = 'https://bucket.poehali.dev'
+S3_BUCKET     = 'files'
+CDN_BASE      = f'https://cdn.poehali.dev/projects/{AWS_KEY}/bucket'
 
 
-# ── DB helpers ─────────────────────────────────────────────────────────
+# ── S3 ─────────────────────────────────────────────────────────────────
+
+def get_s3():
+    return boto3.client(
+        's3',
+        endpoint_url=S3_ENDPOINT,
+        aws_access_key_id=AWS_KEY,
+        aws_secret_access_key=AWS_SECRET,
+    )
+
+
+def upload_audio_to_s3(audio_url: str, comm_id: str) -> str:
+    """Скачивает аудио по URL и загружает в S3. Возвращает CDN URL."""
+    req = urllib.request.Request(audio_url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        audio_data = resp.read()
+
+    key = f'audio/{comm_id}.mp3'
+    s3 = get_s3()
+    s3.put_object(
+        Bucket=S3_BUCKET,
+        Key=key,
+        Body=audio_data,
+        ContentType='audio/mpeg',
+    )
+    return f'{CDN_BASE}/{key}'
+
+
+# ── DB ─────────────────────────────────────────────────────────────────
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
@@ -78,7 +121,7 @@ def save_to_db(comm_id, audio_url, meta, transcript):
     conn.commit(); cur.close(); conn.close()
 
 
-# ── Yandex helpers ─────────────────────────────────────────────────────
+# ── Yandex SpeechKit ───────────────────────────────────────────────────
 
 def yandex_request(url, method='GET', body=None):
     data = json.dumps(body).encode() if body else None
@@ -89,16 +132,15 @@ def yandex_request(url, method='GET', body=None):
     )
     try:
         with urllib.request.urlopen(req, timeout=20) as resp:
-            result = json.loads(resp.read())
-            print(f'[YA] {method} {url} -> ok: {str(result)[:200]}')
-            return result
+            return json.loads(resp.read())
     except urllib.error.HTTPError as e:
         body_err = e.read().decode('utf-8', errors='replace')
         print(f'[YA] {method} {url} -> HTTP {e.code}: {body_err[:300]}')
         raise
 
 
-def start_recognition(audio_url: str) -> str:
+def start_recognition(s3_audio_url: str) -> str:
+    """Запускает распознавание. s3_audio_url должен быть на storage.yandexcloud.net или CDN."""
     body = {
         'config': {'specification': {
             'languageCode': 'ru-RU',
@@ -107,7 +149,7 @@ def start_recognition(audio_url: str) -> str:
             'audioChannelCount': 2,
             'enableSpeakerLabeling': True,
         }},
-        'audio': {'uri': audio_url}
+        'audio': {'uri': s3_audio_url}
     }
     result = yandex_request(STT_URL, method='POST', body=body)
     return result.get('id', '')
@@ -180,7 +222,7 @@ def handler(event: dict, context) -> dict:
         meta = {
             'date':         params.get('date', ''),
             'duration':     params.get('duration', ''),
-            'duration_sec': int(params.get('duration_sec', 0)),
+            'duration_sec': int(params.get('duration_sec', 0) or 0),
         }
 
         if not operation_id:
@@ -229,9 +271,17 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
                 'body': json.dumps(cached, ensure_ascii=False)}
 
-    # Запускаем распознавание
+    # Шаг 1: скачиваем аудио и загружаем в S3
     try:
-        operation_id = start_recognition(audio_url)
+        s3_url = upload_audio_to_s3(audio_url, comm_id)
+        print(f'[S3] uploaded: {s3_url}')
+    except Exception as e:
+        return {'statusCode': 500, 'headers': cors,
+                'body': json.dumps({'error': f'Ошибка загрузки аудио: {str(e)}'}, ensure_ascii=False)}
+
+    # Шаг 2: запускаем распознавание
+    try:
+        operation_id = start_recognition(s3_url)
     except urllib.error.HTTPError as e:
         code = e.code
         if code == 429:
