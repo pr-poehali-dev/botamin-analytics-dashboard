@@ -17,7 +17,7 @@ CORS = {
 
 
 def handler(event: dict, context) -> dict:
-    """Возвращает comm_id всех звонков с готовым транскриптом (replica_count > 0)."""
+    """Возвращает comm_id всех звонков с готовым транскриптом (есть хоть одна реплика)."""
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
@@ -25,7 +25,7 @@ def handler(event: dict, context) -> dict:
     cur  = conn.cursor()
     cur.execute(
         f"SELECT comm_id, replica_count, operator_replicas, client_replicas "
-        f"FROM {SCHEMA}.call_transcripts WHERE replica_count > 0"
+        f"FROM {SCHEMA}.call_transcripts WHERE jsonb_array_length(replicas) > 0"
     )
     rows = cur.fetchall()
     cur.close()

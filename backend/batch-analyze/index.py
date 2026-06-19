@@ -24,13 +24,15 @@ def handler(event: dict, context) -> dict:
     conn = psycopg2.connect(DATABASE_URL)
     cur  = conn.cursor()
 
-    # Транскрибированные звонки у которых нет записи в call_analyses
+    # Все транскрибированные звонки (есть хоть одна реплика) без анализа
     cur.execute(f"""
         SELECT t.comm_id, t.full_text, t.duration_sec
         FROM {SCHEMA}.call_transcripts t
         LEFT JOIN {SCHEMA}.call_analyses a ON a.comm_id = t.comm_id
-        WHERE t.replica_count > 0
+        WHERE jsonb_array_length(t.replicas) > 0
           AND a.comm_id IS NULL
+          AND t.full_text IS NOT NULL
+          AND t.full_text != ''
         ORDER BY t.created_at DESC
     """)
     rows = cur.fetchall()
@@ -38,9 +40,8 @@ def handler(event: dict, context) -> dict:
     conn.close()
 
     pending = [
-        {'comm_id': r[0], 'full_text': r[1] or '', 'duration_sec': r[2] or 0}
+        {'comm_id': r[0], 'full_text': r[1], 'duration_sec': r[2] or 0}
         for r in rows
-        if r[1]  # только если есть текст
     ]
 
     return {
