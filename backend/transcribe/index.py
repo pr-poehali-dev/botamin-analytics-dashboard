@@ -53,10 +53,9 @@ def start_transcription(upload_url: str) -> str:
     """Запускает транскрибацию с диаризацией, возвращает transcript_id."""
     result = aai_request(TRANSCRIPT_URL, method='POST', body={
         'audio_url':         upload_url,
-        'speech_model':      'best',  # лучшая модель для диаризации
         'language_code':     'ru',
-        'speaker_labels':    True,    # диаризация по голосу
-        'speakers_expected': 2,       # оператор + клиент
+        'speaker_labels':    True,   # диаризация по голосу
+        'speakers_expected': 2,      # оператор + клиент
     })
     return result['id']
 
