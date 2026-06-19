@@ -93,11 +93,10 @@ def parse_transcript(op: dict) -> dict:
     chunks     = op.get('response', {}).get('chunks', [])
     full_text  = []
     replicas   = []
-    # Определяем какие каналы есть в ответе
-    channels = set(c.get('channelTag', '1') for c in chunks if c.get('alternatives'))
-    print(f'[STT] channels in response: {sorted(channels)}')
-    # Если только один канал — показываем всё как оператора
-    # Если два канала — канал 1=оператор, канал 2=клиент, но берём оба
+    # Канал 1 = оператор (менеджер), канал 2 = клиент
+    # SpeechKit дублирует стерео — берём только канал 1 для оператора и канал 2 для клиента
+    # Фильтруем дубли: одинаковый текст в ту же секунду на разных каналах
+    seen = set()
     for chunk in chunks:
         alts = chunk.get('alternatives', [])
         if not alts:
@@ -112,12 +111,15 @@ def parse_transcript(op: dict) -> dict:
         if words:
             st = words[0].get('startTime', '0s')
             start = float(str(st).replace('s', ''))
-        if len(channels) <= 1:
-            speaker = 'operator'
-        else:
-            speaker = 'operator' if channel == '1' else 'client'
+        start_r = round(start, 1)
+        # Ключ дедупликации: текст + время (игнорируем канал)
+        key = (start_r, text[:40])
+        if key in seen:
+            continue
+        seen.add(key)
+        speaker = 'operator' if channel == '1' else 'client'
         label = 'Оператор' if speaker == 'operator' else 'Клиент'
-        replicas.append({'speaker': speaker, 'speaker_label': label, 'text': text, 'start_time': round(start, 1)})
+        replicas.append({'speaker': speaker, 'speaker_label': label, 'text': text, 'start_time': start_r})
         full_text.append(f'{label}: {text}')
     replicas.sort(key=lambda r: r['start_time'])
     return {

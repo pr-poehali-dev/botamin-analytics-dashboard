@@ -57,34 +57,39 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
         </button>
         {showReplicas && (
           <div className="space-y-2 overflow-y-auto pr-1">
-            {result.replicas.map((r, i) => (
-              <div key={i} className={`flex gap-3 ${r.speaker === 'client' ? 'justify-end' : ''}`}>
-                {r.speaker === 'operator' && (
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                    style={{ background: 'rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
-                    О
+            {result.replicas.map((r, i) => {
+              const isOperator = r.speaker === 'operator';
+              return (
+                <div key={i} className={`flex gap-3 ${isOperator ? 'justify-end' : 'justify-start'}`}>
+                  {/* Клиент — слева */}
+                  {!isOperator && (
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                      style={{ background: 'rgba(0,170,255,0.2)', color: '#00aaff' }}>
+                      К
+                    </div>
+                  )}
+                  <div className="max-w-[75%]">
+                    <div className={`text-xs mb-0.5 ${isOperator ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>
+                      {r.speaker_label} · {r.start_time}с
+                    </div>
+                    <div className="px-3 py-2 rounded-xl text-xs leading-relaxed"
+                      style={{
+                        background: isOperator ? 'rgba(0,255,136,0.1)' : 'var(--bg-elevated)',
+                        color: 'var(--text-primary)',
+                      }}>
+                      {r.text}
+                    </div>
                   </div>
-                )}
-                <div className="max-w-[75%]">
-                  <div className={`text-xs mb-0.5 ${r.speaker === 'client' ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>
-                    {r.speaker_label} · {r.start_time}с
-                  </div>
-                  <div className="px-3 py-2 rounded-xl text-xs leading-relaxed"
-                    style={{
-                      background: r.speaker === 'operator' ? 'var(--bg-elevated)' : 'rgba(0,170,255,0.1)',
-                      color: 'var(--text-primary)',
-                    }}>
-                    {r.text}
-                  </div>
+                  {/* Оператор — справа */}
+                  {isOperator && (
+                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                      style={{ background: 'rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
+                      О
+                    </div>
+                  )}
                 </div>
-                {r.speaker === 'client' && (
-                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                    style={{ background: 'rgba(0,170,255,0.2)', color: '#00aaff' }}>
-                    К
-                  </div>
-                )}
-              </div>
-            ))}
+              );
+            })}
           </div>
         )}
       </div>
