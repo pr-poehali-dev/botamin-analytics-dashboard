@@ -55,13 +55,23 @@ export default function RecommendationsBlock({ data }: { data: CallsData }) {
     <div className="space-y-6">
 
       {/* Заголовок */}
-      <div>
-        <h1 className="text-base font-bold mb-0.5" style={{ color: 'var(--text-primary)' }}>
-          Рекомендации для роста конверсии
-        </h1>
-        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-          На основе ИИ-анализа {aiRecs?.total ?? data.total.toLocaleString('ru-RU')} звонков
-        </p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h1 className="text-base font-bold mb-0.5" style={{ color: 'var(--text-primary)' }}>
+            Рекомендации для роста конверсии
+          </h1>
+          <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            На основе ИИ-анализа {aiRecs?.total ?? data.total.toLocaleString('ru-RU')} звонков
+          </p>
+        </div>
+        <button
+          onClick={() => { setAiRecs(null); setLoading(true); fetch(AI_REC_URL).then(r => r.json()).then(d => setAiRecs(d)).catch(() => {}).finally(() => setLoading(false)); }}
+          disabled={loading}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs shrink-0 transition-all hover:opacity-80 disabled:opacity-40"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+          <Icon name="RefreshCw" size={12} style={{ animation: loading ? 'spin 1s linear infinite' : 'none' }} />
+          Обновить
+        </button>
       </div>
 
       {/* KPI-сводка из ИИ */}

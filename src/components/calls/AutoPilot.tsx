@@ -6,8 +6,9 @@ const BATCH_STATUS_URL  = 'https://functions.poehali.dev/48734b10-f2f6-4ccf-8a66
 const TRANSCRIBE_URL    = 'https://functions.poehali.dev/1cc0b8dc-c71b-4292-815d-cdae4f93cea8';
 const BATCH_ANALYZE_URL = 'https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018';
 const ANALYZE_URL       = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
+const AI_REC_URL        = 'https://functions.poehali.dev/8a2bb5b8-5bb9-4e68-889e-b7af1fccdac6';
 
-type Phase = 'idle' | 'transcribing' | 'analyzing' | 'done';
+type Phase = 'idle' | 'transcribing' | 'analyzing' | 'recommendations' | 'done';
 
 interface Props {
   calls: CallRecord[];
@@ -141,9 +142,18 @@ export default function AutoPilot({ calls, autoStart }: Props) {
       }
     }
 
+    // ── ЭТАП 3: обновление рекомендаций ──
+    if (!stopRef.current) {
+      setPhase('recommendations');
+      setCurrent('');
+      try {
+        await fetch(AI_REC_URL);
+      } catch { /* ignore */ }
+    }
+
     setPhase('done');
     setCurrent('');
-    setSummary(`Готово! Транскрибировано: ${toTranscribe.length}, проанализировано: ${toAnalyze.length}`);
+    setSummary(`Транскрибировано: ${toTranscribe.length} · Проанализировано: ${toAnalyze.length} · Рекомендации обновлены`);
   };
 
   const handleStop = () => {
@@ -160,8 +170,8 @@ export default function AutoPilot({ calls, autoStart }: Props) {
     setDone(0);
   };
 
-  const isRunning = phase === 'transcribing' || phase === 'analyzing';
-  const phaseLabel = phase === 'transcribing' ? 'Транскрибирую' : phase === 'analyzing' ? 'Анализирую' : '';
+  const isRunning = phase === 'transcribing' || phase === 'analyzing' || phase === 'recommendations';
+  const phaseLabel = phase === 'transcribing' ? 'Транскрибирую' : phase === 'analyzing' ? 'Анализирую' : phase === 'recommendations' ? 'Обновляю рекомендации' : '';
   const pct = total > 0 ? Math.round((done / total) * 100) : 0;
 
   return (
@@ -201,7 +211,7 @@ export default function AutoPilot({ calls, autoStart }: Props) {
                 </div>
                 <div>
                   <p className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>Авто-режим</p>
-                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Транскрибация + ИИ-анализ</p>
+                  <p className="text-xs" style={{ color: 'var(--text-muted)' }}>Транскрибация + ИИ-анализ + Рекомендации</p>
                 </div>
               </div>
               {!isRunning && (
@@ -242,6 +252,14 @@ export default function AutoPilot({ calls, autoStart }: Props) {
                         {pendingAnalyze > 0 ? `${pendingAnalyze} ожидают` : '✓ готово'}
                       </span>
                     </div>
+                    <div className="flex items-center justify-between px-3 py-2.5 rounded-xl"
+                      style={{ background: 'var(--bg-elevated)' }}>
+                      <div className="flex items-center gap-2">
+                        <Icon name="Lightbulb" size={13} style={{ color: '#ff8c00' }} />
+                        <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Шаг 3 — Рекомендации</span>
+                      </div>
+                      <span className="text-xs font-mono font-bold" style={{ color: 'var(--text-muted)' }}>автоматически</span>
+                    </div>
                   </div>
                   {pendingTranscribe === 0 && pendingAnalyze === 0 ? (
                     <div className="flex items-center gap-2 px-3 py-3 rounded-xl"
@@ -281,21 +299,29 @@ export default function AutoPilot({ calls, autoStart }: Props) {
                   </div>
 
                   {/* Шаги */}
-                  <div className="space-y-2">
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                      style={{ background: phase === 'transcribing' ? 'rgba(0,255,136,0.08)' : 'var(--bg-elevated)' }}>
-                      <Icon name="Mic" size={12} style={{ color: phase === 'transcribing' ? 'var(--brand-green)' : 'var(--text-muted)' }} />
-                      <span className="text-xs" style={{ color: phase === 'transcribing' ? 'var(--brand-green)' : 'var(--text-muted)' }}>
-                        Шаг 1 — Транскрибация
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                      style={{ background: phase === 'analyzing' ? 'rgba(0,170,255,0.08)' : 'var(--bg-elevated)' }}>
-                      <Icon name="Sparkles" size={12} style={{ color: phase === 'analyzing' ? '#00aaff' : 'var(--text-muted)' }} />
-                      <span className="text-xs" style={{ color: phase === 'analyzing' ? '#00aaff' : 'var(--text-muted)' }}>
-                        Шаг 2 — ИИ-анализ
-                      </span>
-                    </div>
+                  <div className="space-y-1.5">
+                    {[
+                      { id: 'transcribing', label: 'Шаг 1 — Транскрибация', icon: 'Mic', color: 'var(--brand-green)', bg: 'rgba(0,255,136,0.08)' },
+                      { id: 'analyzing',    label: 'Шаг 2 — ИИ-анализ',     icon: 'Sparkles', color: '#00aaff', bg: 'rgba(0,170,255,0.08)' },
+                      { id: 'recommendations', label: 'Шаг 3 — Рекомендации', icon: 'Lightbulb', color: '#ff8c00', bg: 'rgba(255,140,0,0.08)' },
+                    ].map(step => {
+                      const isActive = phase === step.id;
+                      const isDone   = (step.id === 'transcribing' && (phase === 'analyzing' || phase === 'recommendations' || phase === 'done'))
+                                    || (step.id === 'analyzing' && (phase === 'recommendations' || phase === 'done'));
+                      return (
+                        <div key={step.id} className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                          style={{ background: isActive ? step.bg : 'var(--bg-elevated)' }}>
+                          <Icon name={isDone ? 'CheckCircle' : step.icon} size={12}
+                            style={{ color: isActive ? step.color : isDone ? 'var(--brand-green)' : 'var(--text-muted)' }} />
+                          <span className="text-xs flex-1" style={{ color: isActive ? step.color : isDone ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                            {step.label}
+                          </span>
+                          {isActive && (
+                            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: step.color }} />
+                          )}
+                        </div>
+                      );
+                    })}
                   </div>
 
                   <p className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>
