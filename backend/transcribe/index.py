@@ -53,9 +53,10 @@ def start_transcription(upload_url: str) -> str:
     """Запускает транскрибацию с диаризацией, возвращает transcript_id."""
     result = aai_request(TRANSCRIPT_URL, method='POST', body={
         'audio_url':         upload_url,
+        'speech_model':      'best',  # лучшая модель для диаризации
         'language_code':     'ru',
-        'speaker_labels':    True,   # диаризация по голосу
-        'speakers_expected': 2,      # оператор + клиент
+        'speaker_labels':    True,    # диаризация по голосу
+        'speakers_expected': 2,       # оператор + клиент
     })
     return result['id']
 
@@ -99,20 +100,38 @@ def parse_assemblyai(result: dict) -> dict:
             'all_ivr':           False,
         }
 
-    # Определяем кто оператор: обычно первым говорит много (представляется)
+    # Определяем кто оператор
     # AssemblyAI даёт speaker "A", "B", "C"...
-    # Считаем суммарное кол-во слов на каждого спикера в первых 30 секундах
-    speaker_words_early = {}
-    for u in utterances:
-        start_sec = u.get('start', 0) / 1000.0
-        if start_sec < 30:
-            spk = u.get('speaker', 'A')
-            wc  = len(u.get('words', []))
-            speaker_words_early[spk] = speaker_words_early.get(spk, 0) + wc
+    all_speakers = list({u.get('speaker', 'A') for u in utterances})
+    print(f'[AAI] all_speakers={all_speakers}')
 
-    # Спикер с наибольшим кол-вом слов в начале = оператор
-    operator_spk = max(speaker_words_early, key=speaker_words_early.get) if speaker_words_early else 'A'
-    print(f'[AAI] speaker_words_early={speaker_words_early} operator={operator_spk}')
+    operator_spk = None
+
+    # 1. Ищем спикера который произносит слова-маркеры оператора
+    operator_markers = ['зовут', 'специализируемся', 'специализируемся', 'привлечении клиентов',
+                        'мастеризируемся', 'меня зовут', 'как могу к вам', 'как к вам обращаться',
+                        'рост продаж', 'увеличить продажи', 'маркетинг']
+    for u in utterances:
+        text_lower = u.get('text', '').lower()
+        if any(m in text_lower for m in operator_markers):
+            operator_spk = u.get('speaker', 'A')
+            print(f'[AAI] operator by marker: {operator_spk} text={u.get("text","")[:60]}')
+            break
+
+    # 2. Если маркеров нет — первый спикер с длинной фразой (>5 слов) после IVR = оператор
+    if not operator_spk:
+        for u in utterances:
+            start_sec = u.get('start', 0) / 1000.0
+            if start_sec > 5 and len(u.get('words', [])) > 5:
+                operator_spk = u.get('speaker', 'A')
+                print(f'[AAI] operator by first long phrase: {operator_spk}')
+                break
+
+    # 3. Fallback — первый спикер
+    if not operator_spk:
+        operator_spk = utterances[0].get('speaker', 'A') if utterances else 'A'
+
+    print(f'[AAI] final operator_spk={operator_spk}')
 
     replicas  = []
     full_text = []
