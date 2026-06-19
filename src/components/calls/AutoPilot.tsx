@@ -248,8 +248,10 @@ export default function AutoPilot({ calls, autoStart }: Props) {
                         <Icon name="Sparkles" size={13} style={{ color: '#00aaff' }} />
                         <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>Шаг 2 — ИИ-анализ</span>
                       </div>
-                      <span className="text-xs font-mono font-bold" style={{ color: pendingAnalyze > 0 ? '#ff8c00' : 'var(--brand-green)' }}>
-                        {pendingAnalyze > 0 ? `${pendingAnalyze} ожидают` : '✓ готово'}
+                      <span className="text-xs font-mono font-bold" style={{ color: (pendingAnalyze + pendingTranscribe) > 0 ? '#ff8c00' : 'var(--brand-green)' }}>
+                        {(pendingAnalyze + pendingTranscribe) > 0
+                          ? `~${pendingAnalyze + pendingTranscribe} ожидают`
+                          : '✓ готово'}
                       </span>
                     </div>
                     <div className="flex items-center justify-between px-3 py-2.5 rounded-xl"
