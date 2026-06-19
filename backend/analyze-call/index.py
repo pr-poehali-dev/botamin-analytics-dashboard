@@ -1,5 +1,5 @@
 """
-Анализирует транскрипт звонка через OpenAI GPT-4o-mini. v3
+Анализирует транскрипт звонка через Google Gemini 1.5 Flash.
 Сначала проверяет кэш в БД — если анализ уже есть, возвращает его.
 Иначе анализирует и сохраняет результат в БД.
 """
@@ -8,13 +8,17 @@ import os
 import urllib.request
 import psycopg2
 
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
-DATABASE_URL = os.environ.get('DATABASE_URL', '')
-SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
-OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
+GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
+DATABASE_URL   = os.environ.get('DATABASE_URL', '')
+SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
+
+GEMINI_URL = (
+    'https://generativelanguage.googleapis.com/v1beta/models/'
+    'gemini-1.5-flash:generateContent?key='
+)
 
 SYSTEM_PROMPT = """Ты эксперт по анализу звонков колл-центра рекламного агентства СайтАктив.
-Анализируй транскрипты звонков и возвращай ТОЛЬКО валидный JSON без markdown-обёртки.
+Анализируй транскрипты звонков и возвращай ТОЛЬКО валидный JSON без markdown-обёртки и без ```json.
 
 Структура ответа:
 {
@@ -28,33 +32,34 @@ SYSTEM_PROMPT = """Ты эксперт по анализу звонков кол
   "outcome_label": "Успех" | "Отказ" | "В работе",
   "fail_reason": "строка или null",
   "success_factor": "строка или null",
-  "operator_score": 1-10,
+  "operator_score": число от 1 до 10,
   "operator_followed_script": true | false,
   "operator_handled_objections": true | false,
-  "operator_comment": "краткий комментарий по работе оператора",
+  "operator_comment": "краткий комментарий по работе оператора 1-2 предложения",
   "summary": "2-3 предложения о чём был звонок",
   "key_phrases_client": ["фраза1", "фраза2"],
   "key_phrases_operator": ["фраза1", "фраза2"]
 }
 
 Правила:
-- target: клиент интересуется услугами, есть потенциал сделки
-- non_target: спам, ошибочный номер, нецелевой запрос
-- qualification: клиент назвал бюджет/сроки/ЛПР или есть явная потребность
+- target: клиент интересуется услугами компании, есть потенциал сделки
+- non_target: спам, ошибочный номер, не по теме бизнеса
+- qualification: клиент назвал бюджет/сроки/ЛПР или есть явная конкретная потребность
 - operator_score: 1-4 плохо, 5-6 удовлетворительно, 7-8 хорошо, 9-10 отлично
 - fail_reason: только если outcome=failure, иначе null
-- success_factor: только если outcome=success, иначе null"""
+- success_factor: только если outcome=success, иначе null
+- key_phrases: 2-4 реальные цитаты из текста, не придумывай"""
 
 
 def get_db():
     return psycopg2.connect(DATABASE_URL)
 
 
-def get_cached(comm_id: str) -> dict | None:
+def get_cached(comm_id: str):
     if not comm_id:
         return None
     conn = get_db()
-    cur = conn.cursor()
+    cur  = conn.cursor()
     cur.execute(
         f"""SELECT call_type, call_type_label, qualification, qualification_label,
                    client_interest, client_interest_label, outcome, outcome_label,
@@ -79,7 +84,7 @@ def get_cached(comm_id: str) -> dict | None:
         'operator_score': row[10], 'operator_followed_script': row[11],
         'operator_handled_objections': row[12], 'operator_comment': row[13],
         'summary': row[14],
-        'key_phrases_client': row[15] if row[15] else [],
+        'key_phrases_client':  row[15] if row[15] else [],
         'key_phrases_operator': row[16] if row[16] else [],
         'cached': True,
     }
@@ -89,7 +94,7 @@ def save_to_db(comm_id: str, a: dict):
     if not comm_id:
         return
     conn = get_db()
-    cur = conn.cursor()
+    cur  = conn.cursor()
     cur.execute(
         f"""INSERT INTO {SCHEMA}.call_analyses
             (comm_id, call_type, call_type_label, qualification, qualification_label,
@@ -100,13 +105,17 @@ def save_to_db(comm_id: str, a: dict):
             VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (comm_id) DO UPDATE SET
                 call_type=EXCLUDED.call_type, call_type_label=EXCLUDED.call_type_label,
-                qualification=EXCLUDED.qualification, outcome=EXCLUDED.outcome,
-                outcome_label=EXCLUDED.outcome_label, fail_reason=EXCLUDED.fail_reason,
-                success_factor=EXCLUDED.success_factor, operator_score=EXCLUDED.operator_score,
-                operator_comment=EXCLUDED.operator_comment, summary=EXCLUDED.summary,
+                qualification=EXCLUDED.qualification, qualification_label=EXCLUDED.qualification_label,
+                client_interest=EXCLUDED.client_interest, client_interest_label=EXCLUDED.client_interest_label,
+                outcome=EXCLUDED.outcome, outcome_label=EXCLUDED.outcome_label,
+                fail_reason=EXCLUDED.fail_reason, success_factor=EXCLUDED.success_factor,
+                operator_score=EXCLUDED.operator_score,
+                operator_followed_script=EXCLUDED.operator_followed_script,
+                operator_handled_objections=EXCLUDED.operator_handled_objections,
+                operator_comment=EXCLUDED.operator_comment,
+                summary=EXCLUDED.summary,
                 key_phrases_client=EXCLUDED.key_phrases_client,
-                key_phrases_operator=EXCLUDED.key_phrases_operator
-        """,
+                key_phrases_operator=EXCLUDED.key_phrases_operator""",
         (
             comm_id,
             a.get('call_type'), a.get('call_type_label'),
@@ -129,76 +138,79 @@ def save_to_db(comm_id: str, a: dict):
 def analyze(transcript: str, duration_sec: int) -> dict:
     minutes = duration_sec // 60
     seconds = duration_sec % 60
+    user_text = f"Длительность звонка: {minutes}м {seconds}с\n\nТранскрипт:\n{transcript}"
+
     body = {
-        'model': 'gpt-4o-mini',
-        'messages': [
-            {'role': 'system', 'content': SYSTEM_PROMPT},
-            {'role': 'user', 'content': f'Длительность: {minutes}м {seconds}с\n\nТранскрипт:\n{transcript}'},
-        ],
-        'temperature': 0.1,
-        'max_tokens': 800,
+        'system_instruction': {'parts': [{'text': SYSTEM_PROMPT}]},
+        'contents': [{'parts': [{'text': user_text}]}],
+        'generationConfig': {
+            'temperature': 0.1,
+            'maxOutputTokens': 1024,
+        },
     }
+
     req = urllib.request.Request(
-        OPENAI_URL,
+        GEMINI_URL + GEMINI_API_KEY,
         data=json.dumps(body).encode(),
-        headers={'Authorization': f'Bearer {OPENAI_API_KEY}', 'Content-Type': 'application/json'},
+        headers={'Content-Type': 'application/json'},
         method='POST',
     )
     with urllib.request.urlopen(req, timeout=30) as resp:
         result = json.loads(resp.read())
 
-    content = result['choices'][0]['message']['content'].strip()
+    content = result['candidates'][0]['content']['parts'][0]['text'].strip()
+
+    # Убираем markdown-обёртку если вдруг есть
     if content.startswith('```'):
-        content = content.split('```')[1]
-        if content.startswith('json'):
-            content = content[4:]
-    return json.loads(content.strip())
+        lines = content.split('\n')
+        lines = [l for l in lines if not l.strip().startswith('```')]
+        content = '\n'.join(lines).strip()
+
+    return json.loads(content)
+
+
+CORS = {
+    'Access-Control-Allow-Origin':  '*',
+    'Access-Control-Allow-Methods': 'POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+}
 
 
 def handler(event: dict, context) -> dict:
-    cors = {
-        'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
-        'Access-Control-Allow-Headers': 'Content-Type',
-    }
-
+    """Анализирует транскрипт звонка через Google Gemini 1.5 Flash."""
     if event.get('httpMethod') == 'OPTIONS':
-        return {'statusCode': 200, 'headers': cors, 'body': ''}
+        return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
-    if not OPENAI_API_KEY:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': 'OPENAI_API_KEY не настроен'}, ensure_ascii=False)}
+    if not GEMINI_API_KEY:
+        return {'statusCode': 500, 'headers': CORS,
+                'body': json.dumps({'error': 'GEMINI_API_KEY не настроен'}, ensure_ascii=False)}
 
     body_raw = event.get('body', '{}') or '{}'
     body = json.loads(body_raw) if isinstance(body_raw, str) else (body_raw or {})
 
-    transcript = body.get('transcript', '')
-    comm_id = body.get('comm_id', '')
-    duration_sec = body.get('duration_sec', 0)
+    transcript   = body.get('transcript', '')
+    comm_id      = body.get('comm_id', '')
+    duration_sec = int(body.get('duration_sec') or 0)
 
     if not transcript:
-        return {'statusCode': 400, 'headers': cors,
+        return {'statusCode': 400, 'headers': CORS,
                 'body': json.dumps({'error': 'Нужен transcript'}, ensure_ascii=False)}
 
     # Проверяем кэш
     cached = get_cached(comm_id)
     if cached:
-        return {
-            'statusCode': 200,
-            'headers': {**cors, 'Content-Type': 'application/json'},
-            'body': json.dumps(cached, ensure_ascii=False),
-        }
+        return {'statusCode': 200, 'headers': {**CORS, 'Content-Type': 'application/json'},
+                'body': json.dumps(cached, ensure_ascii=False)}
 
-    # Анализируем
+    # Анализируем через Gemini
+    print(f'[GEMINI] analyzing comm_id={comm_id} duration={duration_sec}s')
     analysis = analyze(transcript, duration_sec)
     analysis['comm_id'] = comm_id
-    analysis['cached'] = False
+    analysis['cached']  = False
+    print(f'[GEMINI] done: score={analysis.get("operator_score")} outcome={analysis.get("outcome")}')
 
     # Сохраняем в БД
     save_to_db(comm_id, analysis)
 
-    return {
-        'statusCode': 200,
-        'headers': {**cors, 'Content-Type': 'application/json'},
-        'body': json.dumps(analysis, ensure_ascii=False),
-    }
+    return {'statusCode': 200, 'headers': {**CORS, 'Content-Type': 'application/json'},
+            'body': json.dumps(analysis, ensure_ascii=False)}
