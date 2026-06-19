@@ -3,28 +3,44 @@ import Icon from '@/components/ui/icon';
 import { type TranscriptResult, type Replica } from '@/components/calls/transcriptionTypes';
 import CallAnalysisCard from '@/components/calls/CallAnalysisCard';
 
-export default function CallTranscriptView({ result, onAnalyze }: { result: TranscriptResult; onAnalyze: () => void }) {
+const SWAP_URL = 'https://functions.poehali.dev/d65e00ae-2b97-479a-8a82-5e9340823220';
+
+export default function CallTranscriptView({ result, onAnalyze, onResultUpdate }: {
+  result: TranscriptResult;
+  onAnalyze: () => void;
+  onResultUpdate?: (updated: Partial<TranscriptResult>) => void;
+}) {
   const [showReplicas, setShowReplicas] = useState(true);
   const [showIvr, setShowIvr]           = useState(false);
-  const [swapped, setSwapped]           = useState(false);
+  const [swapping, setSwapping]         = useState(false);
+  const [swapDone, setSwapDone]         = useState(false);
 
-  // Применяем своп: меняем operator ↔ client в репликах
-  const applySwap = (r: Replica): Replica => {
-    if (!swapped) return r;
-    if (r.speaker === 'operator') return { ...r, speaker: 'client',   speaker_label: 'Клиент' };
-    if (r.speaker === 'client')   return { ...r, speaker: 'operator', speaker_label: 'Оператор' };
-    return r;
+  const handleSwap = async () => {
+    if (!result.comm_id || swapping) return;
+    setSwapping(true);
+    try {
+      const res  = await fetch(SWAP_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ comm_id: result.comm_id }),
+      });
+      const data = await res.json();
+      if (data.ok && onResultUpdate) {
+        onResultUpdate({
+          replicas:          data.replicas,
+          full_text:         data.full_text,
+          operator_replicas: data.operator_replicas,
+          client_replicas:   data.client_replicas,
+        });
+        setSwapDone(true);
+      }
+    } catch { /* ignore */ }
+    setSwapping(false);
   };
 
   const ivrReplicas  = result.replicas.filter((r: Replica) => r.segment === 'ivr');
-  const liveReplicas = result.replicas
-    .filter((r: Replica) => r.segment === 'live' || !r.segment)
-    .map(applySwap);
+  const liveReplicas = result.replicas.filter((r: Replica) => r.segment === 'live' || !r.segment);
   const hasIvr = result.has_ivr && ivrReplicas.length > 0;
-
-  // Пересчитываем счётчики с учётом свопа
-  const opCount = swapped ? result.client_replicas   : result.operator_replicas;
-  const clCount = swapped ? result.operator_replicas : result.client_replicas;
 
   const renderReplica = (r: Replica, i: number) => {
     const isOperator = r.speaker === 'operator';
@@ -65,8 +81,8 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
         <div className="grid grid-cols-3 gap-3 flex-1">
           {[
             { label: 'Реплик всего', val: result.replica_count },
-            { label: 'Оператор',     val: opCount },
-            { label: 'Клиент',       val: clCount },
+            { label: 'Оператор',     val: result.operator_replicas },
+            { label: 'Клиент',       val: result.client_replicas },
           ].map((s, i) => (
             <div key={i} className="p-3 rounded-xl text-center" style={{ background: 'var(--bg-elevated)' }}>
               <div className="text-lg font-black font-mono" style={{ color: 'var(--brand-green)' }}>{s.val}</div>
@@ -77,45 +93,54 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
 
         {/* Кнопка поменять местами */}
         <button
-          onClick={() => setSwapped(v => !v)}
-          title="Поменять оператора и клиента местами"
-          className="flex flex-col items-center justify-center gap-1 px-3 rounded-xl text-xs font-medium transition-all hover:opacity-80"
+          onClick={handleSwap}
+          disabled={swapping || swapDone}
+          title="Поменять оператора и клиента местами и сохранить"
+          className="flex flex-col items-center justify-center gap-1.5 px-3 rounded-xl transition-all hover:opacity-80 disabled:opacity-50"
           style={{
-            background: swapped ? 'rgba(255,140,0,0.1)' : 'var(--bg-elevated)',
-            border: `1px solid ${swapped ? 'rgba(255,140,0,0.3)' : 'var(--border-default)'}`,
-            color: swapped ? '#ff8c00' : 'var(--text-muted)',
-            minWidth: 72,
+            background: swapDone ? 'rgba(0,255,136,0.1)' : 'var(--bg-elevated)',
+            border: `1px solid ${swapDone ? 'rgba(0,255,136,0.3)' : 'var(--border-default)'}`,
+            color: swapDone ? 'var(--brand-green)' : 'var(--text-muted)',
+            minWidth: 76,
           }}>
-          <Icon name="ArrowLeftRight" size={16} style={{ color: swapped ? '#ff8c00' : 'var(--text-muted)' }} />
+          {swapping ? (
+            <div className="w-4 h-4 rounded-full border-2 animate-spin"
+              style={{ borderColor: 'var(--border-default)', borderTopColor: 'var(--text-muted)' }} />
+          ) : (
+            <Icon name={swapDone ? 'CheckCircle' : 'ArrowLeftRight'} size={16}
+              style={{ color: swapDone ? 'var(--brand-green)' : 'var(--text-muted)' }} />
+          )}
           <span className="text-xs leading-tight text-center">
-            {swapped ? 'Своп\nвкл.' : 'Поменять\nролями'}
+            {swapping ? 'Сохраняю…' : swapDone ? 'Сохранено' : 'Поменять\nролями'}
           </span>
         </button>
       </div>
 
-      {/* Баннер свопа */}
-      {swapped && (
-        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
-          style={{ background: 'rgba(255,140,0,0.07)', border: '1px solid rgba(255,140,0,0.2)' }}>
-          <Icon name="ArrowLeftRight" size={14} style={{ color: '#ff8c00', flexShrink: 0 }} />
+      {/* Баннер после успешного свопа */}
+      {swapDone && (
+        <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+          style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)' }}>
+          <Icon name="CheckCircle" size={16} style={{ color: 'var(--brand-green)', flexShrink: 0 }} />
           <div className="flex-1">
-            <p className="text-xs font-semibold" style={{ color: '#ff8c00' }}>
-              Роли поменяны местами (только для просмотра)
+            <p className="text-xs font-semibold" style={{ color: 'var(--brand-green)' }}>
+              Роли сохранены — теперь запусти анализ заново
             </p>
             <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-              Оператор и клиент отображаются в обратном порядке. Исходные данные не изменены.
+              ИИ теперь учтёт правильные роли оператора и клиента
             </p>
           </div>
-          <button onClick={() => setSwapped(false)}
-            className="text-xs px-2 py-1 rounded-lg shrink-0"
-            style={{ background: 'rgba(255,140,0,0.15)', color: '#ff8c00' }}>
-            Сбросить
+          <button
+            onClick={onAnalyze}
+            className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold shrink-0 transition-all hover:opacity-90"
+            style={{ background: 'var(--brand-green)', color: '#000' }}>
+            <Icon name="Sparkles" size={13} />
+            Анализировать
           </button>
         </div>
       )}
 
       {/* Кнопка анализа */}
-      {!result.analysis && result.status !== 'analyzing' && (
+      {!result.analysis && result.status !== 'analyzing' && !swapDone && (
         <button onClick={onAnalyze}
           className="w-full py-3 rounded-xl text-sm font-semibold flex items-center justify-center gap-2 transition-all hover:opacity-90"
           style={{ background: 'var(--brand-green)', color: '#000' }}>
@@ -150,8 +175,6 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
 
         {showReplicas && (
           <div className="space-y-2 overflow-y-auto pr-1">
-
-            {/* IVR блок */}
             {hasIvr && (
               <div className="mb-3">
                 <button
@@ -180,8 +203,6 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
                 </div>
               </div>
             )}
-
-            {/* Живые реплики */}
             {liveReplicas.map((r: Replica, i: number) => renderReplica(r, i))}
           </div>
         )}

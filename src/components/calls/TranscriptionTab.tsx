@@ -438,7 +438,11 @@ export default function TranscriptionTab({ calls, initialCommId }: { calls: Call
               </div>
             )}
 
-            <CallTranscriptView result={result} onAnalyze={handleAnalyze} />
+            <CallTranscriptView
+              result={result}
+              onAnalyze={handleAnalyze}
+              onResultUpdate={(updated) => setResult(prev => prev ? { ...prev, ...updated } : null)}
+            />
           </div>
         )}
       </div>
