@@ -10,12 +10,8 @@
 """
 import json
 import os
-import io
 import base64
 import time
-import hmac
-import hashlib
-import datetime
 import urllib.request
 import urllib.error
 import psycopg2
@@ -33,43 +29,25 @@ STT_ASYNC_URL = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunni
 OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
 
 
-# ── Yandex Object Storage upload ───────────────────────────────────────
+# ── Yandex Object Storage upload через boto3 ───────────────────────────
 
 def yos_upload(data: bytes, key: str, content_type: str = 'audio/mpeg') -> str:
-    """Загружает файл в YOS через AWS4 Signature. Возвращает публичный URL."""
-    now    = datetime.datetime.utcnow()
-    date   = now.strftime('%Y%m%d')
-    amzdt  = now.strftime('%Y%m%dT%H%M%SZ')
-    url    = f'https://{YOS_HOST}/{YOS_BUCKET}/{key}'
-
-    body_hash      = hashlib.sha256(data).hexdigest()
-    signed_headers = 'content-type;host;x-amz-date'
-    headers_canon  = f'content-type:{content_type}\nhost:{YOS_HOST}\nx-amz-date:{amzdt}\n'
-    canonical = f'PUT\n/{YOS_BUCKET}/{key}\n\n{headers_canon}\n{signed_headers}\n{body_hash}'
-
-    scope        = f'{date}/{YOS_REGION}/s3/aws4_request'
-    str_to_sign  = f'AWS4-HMAC-SHA256\n{amzdt}\n{scope}\n{hashlib.sha256(canonical.encode()).hexdigest()}'
-
-    def _sign(k, m):
-        return hmac.new(k, m.encode(), hashlib.sha256).digest()
-
-    sig_key   = _sign(_sign(_sign(_sign(f'AWS4{YOS_SECRET}'.encode(), date), YOS_REGION), 's3'), 'aws4_request')
-    signature = hmac.new(sig_key, str_to_sign.encode(), hashlib.sha256).hexdigest()
-    auth      = (f'AWS4-HMAC-SHA256 Credential={YOS_KEY}/{scope},'
-                 f'SignedHeaders={signed_headers},Signature={signature}')
-
-    req = urllib.request.Request(
-        url, data=data, method='PUT',
-        headers={
-            'Content-Type': content_type,
-            'x-amz-date': amzdt,
-            'Authorization': auth,
-        },
+    """Загружает файл в YOS через boto3. Возвращает публичный URL."""
+    import boto3
+    s3 = boto3.client(
+        's3',
+        endpoint_url=f'https://{YOS_HOST}',
+        aws_access_key_id=YOS_KEY,
+        aws_secret_access_key=YOS_SECRET,
+        region_name=YOS_REGION,
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        resp.read()
-
-    return url  # публичный URL (bucket с доступом "для всех")
+    s3.put_object(
+        Bucket=YOS_BUCKET,
+        Key=key,
+        Body=data,
+        ContentType=content_type,
+    )
+    return f'https://{YOS_HOST}/{YOS_BUCKET}/{key}'
 
 
 # ── SpeechKit async ────────────────────────────────────────────────────
