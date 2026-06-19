@@ -126,81 +126,33 @@ def parse_transcript(op: dict) -> dict:
     for r in raw:
         print(f'[DEBUG] ch={r["channel"]} t={r["start"]} text={r["text"][:60]}')
 
-    # Фразы-маркеры НАШЕГО оператора (Рустам, менеджер по продажам)
-    our_operator_markers = [
-        'рустам', 'привлечени', 'рост продаж', 'маркетинг',
-        'специализируемся', 'производител', 'как могу к вам',
-        'как я могу к вам', 'меня зовут рустам',
-    ]
-
-    def is_our_operator(text: str) -> bool:
-        t = text.lower()
-        return any(m in t for m in our_operator_markers)
-
     has_both_channels = '1' in channels and '2' in channels
 
     if has_both_channels:
-        # Группируем реплики по времени начала
-        from collections import defaultdict
-        by_time: dict = defaultdict(list)
-        for r in raw:
-            by_time[r['start']].append(r)
-
-        # Ключевое наблюдение из логов:
-        # - Уникальные реплики (только на 1 канале) = реплики КЛИЕНТА на его канале
-        # - Дубли (на обоих каналах) = длинные реплики ОПЕРАТОРА, "просачивающиеся" на оба канала
-        # Определяем канал КЛИЕНТА: тот канал у которого есть уникальные (не дублированные) реплики
-        unique_channels: dict = defaultdict(int)
-        for group in by_time.values():
-            if len(group) == 1:
-                unique_channels[group[0]['channel']] += 1
-
-        print(f'[DEBUG] unique_per_channel={dict(unique_channels)}')
-
-        # Канал с уникальными репликами = клиент (клиент говорит коротко, не дублируется)
-        # Канал без уникальных или с меньшим числом = оператор
-        if unique_channels:
-            client_channel = max(unique_channels, key=lambda c: unique_channels[c])
-            operator_channel = '2' if client_channel == '1' else '1'
-        else:
-            # Все дубли — используем маркеры оператора как fallback
-            op_score = {'1': 0, '2': 0}
-            for r in raw:
-                if is_our_operator(r['text']):
-                    op_score[r['channel']] = op_score.get(r['channel'], 0) + 1
-            operator_channel = max(op_score, key=lambda c: op_score[c])
-            client_channel = '2' if operator_channel == '1' else '1'
-
-        print(f'[DEBUG] operator_channel={operator_channel} client_channel={client_channel}')
-
-        # Формируем реплики: дубли (на обоих каналах) = оператор, уникальные = по каналу
-        for start_time, group in sorted(by_time.items()):
-            if len(group) >= 2:
-                # Дубль на обоих каналах = оператор
-                speaker = 'operator'
-                r = group[0]
-            else:
-                r = group[0]
-                speaker = 'client' if r['channel'] == client_channel else 'operator'
-
-            key = (r['start'], r['text'][:40])
+        # Исходящие звонки, стерео-запись АТС:
+        # Канал 1 (левый) = наш оператор (он инициатор, пишется на левый канал)
+        # Канал 2 (правый) = клиент (принял звонок, пишется на правый канал)
+        # Дубли (одна реплика на обоих каналах) — берём версию с нужного канала, вторую игнорируем
+        # Ключ дедупликации: время + начало текста, но РАЗНЫЕ каналы = РАЗНЫЕ реплики
+        for r in sorted(raw, key=lambda x: x['start']):
+            speaker = 'operator' if r['channel'] == '1' else 'client'
+            label = 'Оператор' if speaker == 'operator' else 'Клиент'
+            key = (r['channel'], r['start'])
             if key in seen:
                 continue
             seen.add(key)
-            label = 'Оператор' if speaker == 'operator' else 'Клиент'
             replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
             full_text.append(f'{label}: {r["text"]}')
     else:
-        # Моно-запись: все на одном канале, определяем по тексту
-        for r in raw:
-            key = (r['start'], r['text'][:40])
+        # Моно-запись: все на одном канале — все реплики без разделения
+        for r in sorted(raw, key=lambda x: x['start']):
+            key = (r['channel'], r['start'])
             if key in seen:
                 continue
             seen.add(key)
-            speaker = 'operator' if is_our_operator(r['text']) else 'client'
-            label = 'Оператор' if speaker == 'operator' else 'Клиент'
-            replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
-            full_text.append(f'{label}: {r["text"]}')
+            # Без стерео невозможно точно определить спикера — помечаем всё как клиента
+            replicas.append({'speaker': 'client', 'speaker_label': 'Клиент', 'text': r['text'], 'start_time': r['start']})
+            full_text.append(f'Клиент: {r["text"]}')
     replicas.sort(key=lambda r: r['start_time'])
 
     # Определяем IVR/автоответчик по тексту (независимо от спикера)
