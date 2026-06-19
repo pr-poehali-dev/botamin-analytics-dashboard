@@ -1,148 +1,396 @@
-import { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { loadData, type DashboardData } from '@/lib/dataParser';
-import KpiCard from '@/components/dashboard/KpiCard';
-import FunnelChart from '@/components/dashboard/FunnelChart';
-import TimeHeatmap from '@/components/dashboard/TimeHeatmap';
-import PhrasesPanel from '@/components/dashboard/PhrasesPanel';
-import IndustryTable from '@/components/dashboard/IndustryTable';
-import AbTestCard from '@/components/dashboard/AbTestCard';
-import DurationChart from '@/components/dashboard/DurationChart';
-import DialoguesTable from '@/components/dashboard/DialoguesTable';
+import { useState, useRef, useCallback } from 'react';
+import {
+  loadFromUrl, loadFromFile, formatSec, formatTotalHours,
+  type CallsData, type CallRecord,
+} from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
+import {
+  BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+} from 'recharts';
 
-type Tab = 'overview' | 'funnel' | 'time' | 'dialogues' | 'abtest';
+const DEMO_URL =
+  'https://cdn.poehali.dev/projects/6a84af2c-c107-4039-b71a-e57da70119f0/bucket/f46cc9cf-190b-4379-8e94-6225cc11ec61.xlsx';
 
-const TABS: { id: Tab; label: string; icon: string }[] = [
-  { id: 'overview',  label: 'Обзор',    icon: 'LayoutDashboard' },
-  { id: 'funnel',    label: 'Воронка',  icon: 'Filter' },
-  { id: 'time',      label: 'Время',    icon: 'Clock' },
-  { id: 'dialogues', label: 'Диалоги',  icon: 'MessageSquare' },
-  { id: 'abtest',    label: 'A/B тест', icon: 'FlaskConical' },
-];
+type Tab = 'overview' | 'calls' | 'recommendations';
 
-function formatSec(sec: number): string {
-  const m = Math.floor(sec / 60);
-  const s = Math.round(sec % 60);
-  if (m > 0) return `${m}м ${s}с`;
-  return `${s}с`;
-}
-
-function LoadingScreen() {
+// ── tooltip для баров ──────────────────────────────────────────────────
+interface TipProps { active?: boolean; payload?: { name: string; value: number }[]; label?: string }
+const BarTip = ({ active, payload, label }: TipProps) => {
+  if (!active || !payload?.length) return null;
   return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-6" style={{ background: 'var(--bg-primary)' }}>
-      <div className="flex items-center gap-3">
-        <div className="w-8 h-8 rounded-lg flex items-center justify-center" style={{ background: 'var(--brand-green)' }}>
-          <span className="text-black font-bold text-sm">B</span>
-        </div>
-        <span className="text-xl font-bold" style={{ color: 'var(--text-primary)' }}>Botamin Analytics</span>
-      </div>
-      <div className="flex flex-col items-center gap-3">
-        <div className="flex gap-1.5">
-          {[0, 1, 2].map(i => (
-            <div key={i} className="w-2 h-2 rounded-full animate-pulse-green"
-              style={{ background: 'var(--brand-green)', animationDelay: `${i * 0.2}s` }} />
-          ))}
-        </div>
-        <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Анализирую 11 486 диалогов…</p>
-      </div>
+    <div className="px-3 py-2 rounded-lg text-xs border"
+      style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+      <div className="font-semibold mb-1">{label}</div>
+      {payload.map((p, i) => (
+        <div key={i} style={{ color: 'var(--brand-green)' }}>{p.name}: {p.value}</div>
+      ))}
     </div>
   );
-}
+};
 
-function ErrorScreen({ error, onRetry }: { error: string; onRetry: () => void }) {
-  return (
-    <div className="min-h-screen flex flex-col items-center justify-center gap-4" style={{ background: 'var(--bg-primary)' }}>
-      <div className="w-12 h-12 rounded-full flex items-center justify-center" style={{ background: 'rgba(255,68,68,0.15)' }}>
-        <Icon name="AlertTriangle" size={24} style={{ color: '#ff4444' }} />
-      </div>
-      <div className="text-center">
-        <p className="font-semibold" style={{ color: 'var(--text-primary)' }}>Ошибка загрузки данных</p>
-        <p className="text-sm mt-1" style={{ color: 'var(--text-muted)' }}>{error}</p>
-      </div>
-      <button onClick={onRetry} className="px-4 py-2 rounded-lg text-sm font-medium"
-        style={{ background: 'var(--brand-green)', color: '#000' }}>
-        Попробовать снова
-      </button>
-    </div>
-  );
-}
+// ── экран загрузки файла ───────────────────────────────────────────────
+function UploadScreen({ onLoad }: { onLoad: (d: CallsData) => void }) {
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState('');
+  const [drag, setDrag] = useState(false);
+  const inputRef = useRef<HTMLInputElement>(null);
 
-export default function Index() {
-  const [data, setData] = useState<DashboardData | null>(null);
-  const navigate = useNavigate();
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [tab, setTab] = useState<Tab>('overview');
-
-  const load = useCallback(async () => {
+  const process = useCallback(async (file?: File, url?: string) => {
     setLoading(true);
-    setError(null);
+    setError('');
     try {
-      const result = await loadData();
-      setData(result);
+      const data = file ? await loadFromFile(file) : await loadFromUrl(url!);
+      onLoad(data);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [onLoad]);
 
-  useEffect(() => { load(); }, [load]);
-
-  if (loading) return <LoadingScreen />;
-  if (error || !data) return <ErrorScreen error={error ?? 'Нет данных'} onRetry={load} />;
-
-  const sc = data.stageCounts ?? [0, 0, 0, 0, 0];
-  const silentPct = data.total > 0 ? ((data.total - data.withDialogue) / data.total * 100) : 0;
-  const bottleneckStage = (() => {
-    const drops = data.funnel.map((f, i) => i === 0 ? 0 : f.dropPct);
-    const maxDrop = Math.max(...drops.slice(1));
-    return drops.indexOf(maxDrop);
-  })();
+  const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files?.[0]) process(e.target.files[0]);
+  };
+  const onDrop = (e: React.DragEvent) => {
+    e.preventDefault(); setDrag(false);
+    if (e.dataTransfer.files?.[0]) process(e.dataTransfer.files[0]);
+  };
 
   return (
-    <div className="min-h-screen" style={{ background: 'var(--bg-primary)' }}>
-      {/* Header */}
+    <div className="min-h-screen flex flex-col items-center justify-center px-4"
+      style={{ background: 'var(--bg-primary)' }}>
+      {/* лого */}
+      <div className="flex items-center gap-3 mb-10">
+        <div className="w-10 h-10 rounded-xl flex items-center justify-center font-black text-lg"
+          style={{ background: 'var(--brand-green)', color: '#000' }}>S</div>
+        <div>
+          <div className="font-bold text-base" style={{ color: 'var(--text-primary)' }}>СайтАктив</div>
+          <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Аналитика звонков</div>
+        </div>
+      </div>
+
+      {/* зона загрузки */}
+      <div
+        className="w-full max-w-md rounded-2xl p-8 text-center cursor-pointer transition-all"
+        style={{
+          border: `2px dashed ${drag ? 'var(--brand-green)' : 'var(--border-default)'}`,
+          background: drag ? 'var(--brand-green-muted)' : 'var(--bg-card)',
+        }}
+        onDragOver={e => { e.preventDefault(); setDrag(true); }}
+        onDragLeave={() => setDrag(false)}
+        onDrop={onDrop}
+        onClick={() => !loading && inputRef.current?.click()}>
+        <input ref={inputRef} type="file" accept=".xlsx,.xls" className="hidden" onChange={onFile} />
+        {loading ? (
+          <div className="flex flex-col items-center gap-3">
+            <div className="flex gap-1.5">
+              {[0, 1, 2].map(i => (
+                <div key={i} className="w-2.5 h-2.5 rounded-full animate-pulse"
+                  style={{ background: 'var(--brand-green)', animationDelay: `${i * 0.2}s` }} />
+              ))}
+            </div>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Анализирую звонки…</p>
+          </div>
+        ) : (
+          <>
+            <div className="w-14 h-14 rounded-2xl mx-auto mb-4 flex items-center justify-center"
+              style={{ background: 'var(--brand-green-muted)' }}>
+              <Icon name="Upload" size={28} style={{ color: 'var(--brand-green)' }} />
+            </div>
+            <p className="font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>
+              Загрузите Excel-файл со звонками
+            </p>
+            <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+              Перетащите файл или нажмите для выбора
+            </p>
+            <p className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>
+              Поддерживается экспорт из CoMagic / Битрикс24
+            </p>
+          </>
+        )}
+      </div>
+
+      {error && (
+        <p className="mt-4 text-sm px-4 py-2 rounded-lg"
+          style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666' }}>{error}</p>
+      )}
+
+      {/* демо */}
+      {!loading && (
+        <button
+          className="mt-5 text-xs underline underline-offset-2 transition-opacity hover:opacity-70"
+          style={{ color: 'var(--text-muted)' }}
+          onClick={() => process(undefined, DEMO_URL)}>
+          Открыть демо (3 263 звонка, апрель–июнь 2026)
+        </button>
+      )}
+    </div>
+  );
+}
+
+// ── KPI карточка ───────────────────────────────────────────────────────
+function KPI({ icon, label, value, sub, accent }: {
+  icon: string; label: string; value: string; sub?: string; accent?: boolean
+}) {
+  return (
+    <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+      <div className="flex items-center gap-2 mb-3">
+        <Icon name={icon} size={15} style={{ color: accent ? 'var(--brand-green)' : 'var(--text-muted)' }} />
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{label}</span>
+      </div>
+      <div className="text-2xl font-black font-mono"
+        style={{ color: accent ? 'var(--brand-green)' : 'var(--text-primary)' }}>{value}</div>
+      {sub && <div className="text-xs mt-1" style={{ color: 'var(--text-muted)' }}>{sub}</div>}
+    </div>
+  );
+}
+
+// ── таблица звонков ────────────────────────────────────────────────────
+function CallsTable({ calls }: { calls: CallRecord[] }) {
+  const [search, setSearch] = useState('');
+  const [minSec, setMinSec] = useState('');
+  const [maxSec, setMaxSec] = useState('');
+  const [page, setPage] = useState(1);
+  const PER_PAGE = 50;
+
+  const filtered = calls.filter(c => {
+    if (search && !c.date.includes(search) && !c.comm_id.includes(search)) return false;
+    if (minSec && c.duration_sec < Number(minSec)) return false;
+    if (maxSec && c.duration_sec > Number(maxSec)) return false;
+    return true;
+  });
+
+  const total = filtered.length;
+  const pages = Math.ceil(total / PER_PAGE);
+  const slice = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
+
+  const durColor = (sec: number) => {
+    if (sec < 30) return '#ff4444';
+    if (sec < 60) return '#ff8c00';
+    if (sec >= 300) return 'var(--brand-green)';
+    return 'var(--text-secondary)';
+  };
+
+  return (
+    <div className="space-y-4">
+      {/* фильтры */}
+      <div className="flex flex-wrap gap-3">
+        <input
+          value={search} onChange={e => { setSearch(e.target.value); setPage(1); }}
+          placeholder="Поиск по дате или ID звонка…"
+          className="flex-1 min-w-48 px-3 py-2 rounded-lg text-sm outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
+        <input
+          value={minSec} onChange={e => { setMinSec(e.target.value); setPage(1); }}
+          placeholder="Мин. сек."
+          type="number" className="w-24 px-3 py-2 rounded-lg text-sm outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
+        <input
+          value={maxSec} onChange={e => { setMaxSec(e.target.value); setPage(1); }}
+          placeholder="Макс. сек."
+          type="number" className="w-24 px-3 py-2 rounded-lg text-sm outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
+        {(search || minSec || maxSec) && (
+          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setPage(1); }}
+            className="px-3 py-2 rounded-lg text-xs"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+            Сбросить
+          </button>
+        )}
+      </div>
+
+      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+        Показано {slice.length} из {total.toLocaleString('ru-RU')} звонков
+      </p>
+
+      {/* таблица */}
+      <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
+        {/* заголовок */}
+        <div className="grid grid-cols-12 gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider"
+          style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)' }}>
+          <div className="col-span-2">Дата</div>
+          <div className="col-span-2">Длительность</div>
+          <div className="col-span-2">Статус</div>
+          <div className="col-span-2">ID звонка</div>
+          <div className="col-span-2">Тип</div>
+          <div className="col-span-2">Запись</div>
+        </div>
+        {slice.map((c, i) => (
+          <div key={i}
+            className="grid grid-cols-12 gap-2 px-4 py-2.5 text-xs border-b items-center"
+            style={{
+              borderColor: 'var(--border-subtle)',
+              background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)',
+            }}>
+            <div className="col-span-2 font-mono" style={{ color: 'var(--text-secondary)' }}>{c.date}</div>
+            <div className="col-span-2 font-mono font-semibold" style={{ color: durColor(c.duration_sec) }}>
+              {c.duration}
+            </div>
+            <div className="col-span-2">
+              <span className="px-2 py-0.5 rounded-full text-xs"
+                style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)' }}>
+                {c.status}
+              </span>
+            </div>
+            <div className="col-span-2 font-mono text-xs" style={{ color: 'var(--text-muted)' }}>
+              {c.comm_id || '—'}
+            </div>
+            <div className="col-span-2 text-xs" style={{ color: 'var(--text-muted)' }}>{c.call_type}</div>
+            <div className="col-span-2">
+              {c.record_url ? (
+                <a href={c.record_url} target="_blank" rel="noreferrer"
+                  className="flex items-center gap-1 transition-opacity hover:opacity-70"
+                  style={{ color: 'var(--brand-green)' }}>
+                  <Icon name="Play" size={11} />
+                  Слушать
+                </a>
+              ) : (
+                <span style={{ color: 'var(--text-muted)' }}>—</span>
+              )}
+            </div>
+          </div>
+        ))}
+      </div>
+
+      {/* пагинация */}
+      {pages > 1 && (
+        <div className="flex items-center justify-center gap-2">
+          <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page === 1}
+            className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-40"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+            ← Назад
+          </button>
+          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+            {page} / {pages}
+          </span>
+          <button onClick={() => setPage(p => Math.min(pages, p + 1))} disabled={page === pages}
+            className="px-3 py-1.5 rounded-lg text-xs disabled:opacity-40"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)' }}>
+            Вперёд →
+          </button>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── блок рекомендаций ──────────────────────────────────────────────────
+function RecommendationsBlock({ data }: { data: CallsData }) {
+  const priorityColor = { high: '#ff4444', medium: '#ff8c00', low: 'var(--brand-green)' };
+  const priorityLabel = { high: 'Высокий', medium: 'Средний', low: 'Низкий' };
+  const priorityIcon = { high: 'AlertTriangle', medium: 'Info', low: 'CheckCircle' };
+
+  return (
+    <div className="space-y-4">
+      {data.recommendations.map((r, i) => (
+        <div key={i} className="rounded-2xl p-5"
+          style={{ background: 'var(--bg-card)', border: `1px solid ${priorityColor[r.priority]}33` }}>
+          <div className="flex items-start gap-3">
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0 mt-0.5"
+              style={{ background: `${priorityColor[r.priority]}18` }}>
+              <Icon name={priorityIcon[r.priority]} size={16} style={{ color: priorityColor[r.priority] }} />
+            </div>
+            <div className="flex-1">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>{r.title}</span>
+                <span className="px-2 py-0.5 rounded-full text-xs font-medium"
+                  style={{ background: `${priorityColor[r.priority]}18`, color: priorityColor[r.priority] }}>
+                  {priorityLabel[r.priority]} приоритет
+                </span>
+              </div>
+              <p className="text-sm mb-2" style={{ color: 'var(--text-secondary)' }}>{r.desc}</p>
+              <div className="flex items-start gap-2 p-3 rounded-lg"
+                style={{ background: 'var(--bg-elevated)' }}>
+                <Icon name="Lightbulb" size={13} style={{ color: 'var(--brand-green)', marginTop: 1, flexShrink: 0 }} />
+                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{r.action}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      {/* контекст данных */}
+      <div className="rounded-2xl p-5 mt-4"
+        style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+        <div className="flex items-center gap-2 mb-4">
+          <Icon name="BarChart2" size={14} style={{ color: 'var(--brand-green)' }} />
+          <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+            На чём основаны рекомендации
+          </span>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-3">
+          {[
+            { label: 'Всего проанализировано', val: `${data.total.toLocaleString('ru-RU')} звонков` },
+            { label: 'Средняя длительность', val: formatSec(data.avg_duration_sec) },
+            { label: 'Суммарное время разговоров', val: formatTotalHours(data.total_talk_sec) },
+            { label: 'Источник данных', val: 'CoMagic / Битрикс24' },
+          ].map((row, i) => (
+            <div key={i} className="flex items-center justify-between p-3 rounded-lg"
+              style={{ background: 'var(--bg-elevated)' }}>
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+              <span className="text-xs font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{row.val}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── главный дашборд ────────────────────────────────────────────────────
+function Dashboard({ data, onReset }: { data: CallsData; onReset: () => void }) {
+  const [tab, setTab] = useState<Tab>('overview');
+
+  const TABS: { id: Tab; label: string; icon: string }[] = [
+    { id: 'overview', label: 'Обзор', icon: 'LayoutDashboard' },
+    { id: 'calls', label: 'Все звонки', icon: 'PhoneCall' },
+    { id: 'recommendations', label: 'Рекомендации', icon: 'Lightbulb' },
+  ];
+
+  const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
+  const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
+
+  return (
+    <div className="min-h-screen" style={{ background: 'var(--bg-primary)', fontFamily: "'Golos Text', sans-serif" }}>
+
+      {/* header */}
       <header className="sticky top-0 z-40 border-b"
-        style={{ background: 'rgba(10,10,10,0.95)', borderColor: 'var(--border-default)', backdropFilter: 'blur(12px)' }}>
+        style={{ background: 'rgba(10,10,10,0.96)', borderColor: 'var(--border-default)', backdropFilter: 'blur(12px)' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
           <div className="flex items-center justify-between h-14">
             <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-md flex items-center justify-center font-bold text-sm"
-                style={{ background: 'var(--brand-green)', color: '#000' }}>B</div>
-              <div className="flex items-center gap-2">
-                <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>Botamin</span>
-                <span className="text-sm" style={{ color: 'var(--text-muted)' }}>/</span>
-                <span className="text-sm" style={{ color: 'var(--text-secondary)' }}>Analytics</span>
-              </div>
+              <div className="w-7 h-7 rounded-md flex items-center justify-center font-black text-sm"
+                style={{ background: 'var(--brand-green)', color: '#000' }}>S</div>
+              <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>СайтАктив</span>
+              <span className="text-xs px-2 py-0.5 rounded-full hidden sm:inline"
+                style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+                Аналитика звонков
+              </span>
             </div>
             <div className="flex items-center gap-2">
-              <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full text-xs"
+              <div className="px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5"
                 style={{ background: 'var(--brand-green-muted)', border: '1px solid rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
-                <div className="w-1.5 h-1.5 rounded-full animate-pulse-green" style={{ background: 'var(--brand-green)' }} />
+                <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--brand-green)' }} />
                 {data.total.toLocaleString('ru-RU')} звонков
               </div>
-              <button onClick={load} className="p-1.5 rounded-lg" style={{ color: 'var(--text-muted)' }} title="Обновить">
-                <Icon name="RefreshCw" size={14} />
-              </button>
-              <button
-                onClick={() => navigate('/case')}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs font-medium transition-all"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}
-                title="Отчёт по тестовому заданию">
-                <Icon name="FileText" size={12} />
-                <span className="hidden sm:inline">Отчёт</span>
+              <button onClick={onReset}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+                <Icon name="Upload" size={12} />
+                <span className="hidden sm:inline">Загрузить другой</span>
               </button>
             </div>
           </div>
 
+          {/* табы */}
           <div className="flex gap-0.5 -mb-px overflow-x-auto">
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-all"
-                style={{ borderColor: tab === t.id ? 'var(--brand-green)' : 'transparent',
-                  color: tab === t.id ? 'var(--brand-green)' : 'var(--text-muted)' }}>
+                style={{
+                  borderColor: tab === t.id ? 'var(--brand-green)' : 'transparent',
+                  color: tab === t.id ? 'var(--brand-green)' : 'var(--text-muted)',
+                }}>
                 <Icon name={t.icon} size={13} />
                 {t.label}
               </button>
@@ -155,220 +403,152 @@ export default function Index() {
 
         {/* ── ОБЗОР ── */}
         {tab === 'overview' && (
-          <div className="space-y-5 animate-fade-in">
-            <div>
-              <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Сводка за неделю</h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Анализ {data.total.toLocaleString('ru-RU')} звонков
-                {' · '}Конверсия в лид:{' '}
-                <span style={{ color: 'var(--brand-green)' }}>{data.overallCR.toFixed(2)}%</span>
-              </p>
-            </div>
-
-            {/* Сырые числа — верификация, все из stageCounts (полный датасет) */}
-            <div className="card-glass p-4">
-              <div className="flex items-center gap-2 mb-3">
-                <Icon name="ShieldCheck" size={13} style={{ color: 'var(--brand-green)' }} />
-                <span className="text-xs font-semibold uppercase tracking-widest" style={{ color: 'var(--brand-green)' }}>
-                  Сырые числа — для сверки с таблицей
-                </span>
-                <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
-                  все {data.total.toLocaleString('ru-RU')} строк
-                </span>
-              </div>
-              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-x-6 gap-y-1.5">
-                {[
-                  { label: 'Всего строк CSV',          val: data.total },
-                  { label: 'С непустым диалогом',      val: data.withDialogue },
-                  { label: 'Без диалога (этап 0)',      val: sc[0] },
-                  { label: 'Только бот (этап 1)',       val: sc[1] },
-                  { label: 'Клиент ответил (этап 2)',   val: sc[2] },
-                  { label: 'Согласился на встречу (3)', val: sc[3] },
-                  { label: 'Квалифицирован (этап 4)',   val: sc[4] },
-                  { label: 'Лидов (stage ≥ 3)',         val: data.leads },
-                  ...data.endReasonBreakdown.map(r => ({ label: r.name, val: r.value })),
-                  { label: 'Средняя длит. (сек)',       val: data.avgDurationSec },
-                ].map((row, i) => (
-                  <div key={i} className="flex items-center justify-between py-1 border-b"
-                    style={{ borderColor: 'var(--border-subtle)' }}>
-                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                    <span className="text-xs font-mono-data font-semibold ml-3" style={{ color: 'var(--text-primary)' }}>
-                      {row.val.toLocaleString('ru-RU')}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
+          <div className="space-y-6 animate-fade-in">
 
             {/* KPI */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              <KpiCard label="Всего звонков"       value={data.total.toLocaleString('ru-RU')} sub="за неделю" delay={0} />
-              <KpiCard label="Вступили в диалог"   value={`${(100 - silentPct).toFixed(1)}%`}
-                sub={`${data.withDialogue.toLocaleString('ru-RU')} звонков`} delay={80} />
-              <KpiCard label="Лидов (встреча+)"    value={data.leads.toLocaleString('ru-RU')}
-                sub={`CR = ${data.overallCR.toFixed(2)}%`} accent delay={160} />
-              <KpiCard label="Средняя длительность" value={formatSec(data.avgDurationSec)} sub="на звонок" delay={240} />
+            <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+              <KPI icon="PhoneCall" label="Всего звонков" value={data.total.toLocaleString('ru-RU')} accent />
+              <KPI icon="Clock" label="Средняя длительность"
+                value={formatSec(data.avg_duration_sec)}
+                sub="время разговора" />
+              <KPI icon="Timer" label="Суммарное время"
+                value={formatTotalHours(data.total_talk_sec)}
+                sub="часов разговоров" />
+              <KPI icon="CheckCircle" label="Статус"
+                value={Object.keys(data.statuses)[0] ?? '—'}
+                sub={`${Object.values(data.statuses)[0] ?? 0} звонков`}
+                accent />
             </div>
 
-            {/* Воронка + длительность */}
-            <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
-              <div className="lg:col-span-2">
-                <FunnelChart data={data.funnel} total={data.total} overallCR={data.overallCR} leads={data.leads} />
+            {/* Динамика по дням */}
+            <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Динамика звонков по дням
+                </h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  {data.by_day.length > 0
+                    ? `${data.by_day[0].date} — ${data.by_day[data.by_day.length - 1].date}`
+                    : 'Нет данных'}
+                </p>
               </div>
-              <DurationChart buckets={data.durationBuckets} endReasons={data.endReasonBreakdown} />
+              <ResponsiveContainer width="100%" height={200}>
+                <BarChart data={data.by_day} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+                  <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false}
+                    interval={Math.floor(data.by_day.length / 8)} />
+                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip content={<BarTip />} cursor={false} />
+                  <Bar dataKey="count" name="Звонков" radius={[3, 3, 0, 0]}>
+                    {data.by_day.map((d, i) => (
+                      <Cell key={i} fill={`rgba(0,255,136,${0.25 + (d.count / maxDay) * 0.75})`} />
+                    ))}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
 
-            {/* Предупреждение об узком месте */}
-            {data.funnel[bottleneckStage] && (
-              <div className="flex items-start gap-3 p-4 rounded-xl"
-                style={{ background: 'rgba(255,140,0,0.08)', border: '1px solid rgba(255,140,0,0.2)' }}>
-                <div className="text-lg shrink-0">🔥</div>
-                <div>
-                  <p className="text-sm font-semibold" style={{ color: '#ff8c00' }}>Узкое место — этап {bottleneckStage}</p>
-                  <p className="text-xs mt-1 leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                    <span style={{ color: '#ff8c00', fontWeight: 600 }}>
-                      {data.funnel[bottleneckStage].label}
-                    </span>
-                    {' '}— потери {data.funnel[bottleneckStage].dropPct.toFixed(1)}% на этом шаге.
-                    {' '}Перейдите во вкладку{' '}
-                    <button onClick={() => setTab('abtest')}
-                      className="underline" style={{ color: '#ff8c00' }}>A/B тест</button>
-                    {' '}чтобы увидеть рекомендацию.
-                  </p>
+            {/* Распределение по длительности */}
+            <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+              <div className="mb-4">
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Распределение по длительности
+                </h2>
+                <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                  Сколько звонков в каждом диапазоне
+                </p>
+              </div>
+              <div className="grid grid-cols-2 gap-4">
+                <ResponsiveContainer width="100%" height={160}>
+                  <BarChart data={data.duration_dist} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+                    <XAxis dataKey="label" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} />
+                    <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                    <Tooltip content={<BarTip />} cursor={false} />
+                    <Bar dataKey="count" name="Звонков" radius={[3, 3, 0, 0]}>
+                      {data.duration_dist.map((d, i) => (
+                        <Cell key={i} fill={`rgba(0,170,255,${0.25 + (d.count / maxBucket) * 0.75})`} />
+                      ))}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {data.duration_dist.map((d, i) => (
+                    <div key={i} className="flex items-center gap-3">
+                      <div className="w-2 h-2 rounded-full shrink-0" style={{ background: 'rgba(0,170,255,0.7)' }} />
+                      <span className="text-xs flex-1" style={{ color: 'var(--text-secondary)' }}>{d.label}</span>
+                      <span className="text-xs font-mono font-semibold" style={{ color: 'var(--text-primary)' }}>
+                        {d.count.toLocaleString('ru-RU')}
+                      </span>
+                      <span className="text-xs w-10 text-right" style={{ color: 'var(--text-muted)' }}>{d.pct}%</span>
+                    </div>
+                  ))}
                 </div>
               </div>
-            )}
-          </div>
-        )}
-
-        {/* ── ВОРОНКА ── */}
-        {tab === 'funnel' && (
-          <div className="space-y-5 animate-fade-in">
-            <div>
-              <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Воронка диалога</h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Где и сколько клиентов теряется на каждом шаге
-              </p>
             </div>
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-              <FunnelChart data={data.funnel} total={data.total} overallCR={data.overallCR} leads={data.leads} />
-              <div className="space-y-3">
-                {data.funnel.map((item, idx) => (
-                  <div key={idx} className="card-glass p-4 animate-fade-in"
-                    style={{ animationDelay: `${idx * 60}ms` }}>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-xs font-semibold" style={{ color: item.color }}>
-                        Этап {idx} — {item.label}
-                      </span>
-                      <span className="text-xl font-bold font-mono-data" style={{ color: item.color }}>
-                        {item.count.toLocaleString('ru-RU')}
-                      </span>
-                    </div>
-                    <div className="flex gap-4 text-xs" style={{ color: 'var(--text-muted)' }}>
-                      <span>Доля от всех: <span style={{ color: 'var(--text-secondary)' }}>{item.pct.toFixed(1)}%</span></span>
-                      {idx > 0 && (
-                        <span>Потери с предыдущего: <span style={{ color: '#ff4444' }}>−{item.dropPct.toFixed(1)}%</span></span>
-                      )}
-                    </div>
-                  </div>
-                ))}
+
+            {/* Сводная таблица */}
+            <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+              <div className="flex items-center gap-2 mb-4">
+                <Icon name="ShieldCheck" size={14} style={{ color: 'var(--brand-green)' }} />
+                <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                  Сводные показатели
+                </h2>
               </div>
-            </div>
-            <PhrasesPanel refusalPhrases={data.refusalPhrases} successPhrases={data.successPhrases} />
-          </div>
-        )}
-
-        {/* ── ВРЕМЯ ── */}
-        {tab === 'time' && (
-          <div className="space-y-5 animate-fade-in">
-            <div>
-              <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Время и охват</h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Когда звонить эффективнее всего</p>
-            </div>
-            <TimeHeatmap hourly={data.hourly} byDay={data.byDay} />
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <DurationChart buckets={data.durationBuckets} endReasons={data.endReasonBreakdown} />
-              <IndustryTable data={data.byIndustry} />
-            </div>
-            <div className="p-4 rounded-xl"
-              style={{ background: 'rgba(0,170,255,0.06)', border: '1px solid rgba(0,170,255,0.15)' }}>
-              <p className="text-xs font-semibold mb-1" style={{ color: '#00aaff' }}>💡 Инсайт по времени</p>
-              <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                Данные показывают пики конверсии по часам — смена расписания звонков это самый быстрый
-                тест без изменений скрипта. Ожидаемый прирост CR0: +10–20%.
-              </p>
-            </div>
-          </div>
-        )}
-
-        {/* ── ДИАЛОГИ ── */}
-        {tab === 'dialogues' && (
-          <div className="space-y-5 animate-fade-in">
-            <div>
-              <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>Браузер диалогов</h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Показаны первые 500 записей · фильтруй по этапам, читай транскрипты
-              </p>
-            </div>
-            <PhrasesPanel refusalPhrases={data.refusalPhrases} successPhrases={data.successPhrases} />
-            <DialoguesTable records={data.records} totalAll={data.total} />
-          </div>
-        )}
-
-        {/* ── A/B ТЕСТ ── */}
-        {tab === 'abtest' && (
-          <div className="space-y-5 animate-fade-in">
-            <div>
-              <h1 className="text-lg font-bold" style={{ color: 'var(--text-primary)' }}>A/B тесты</h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                Автоматически найденные точки роста и рекомендации
-              </p>
-            </div>
-            <AbTestCard data={data} />
-            <div className="card-glass p-5">
-              <h3 className="text-sm font-semibold mb-4" style={{ color: 'var(--text-primary)' }}>Методология метрик</h3>
-              <div className="space-y-3">
+              <div className="grid sm:grid-cols-2 gap-2">
                 {[
-                  { name: 'CR0 — Охват',    desc: 'Доля звонков с непустым транскриптом. Зависит от базы, времени звонка, качества номеров.' },
-                  { name: 'CR1 — Диалог',   desc: 'Бот успел хоть что-то сказать. Проблема здесь — база или технические сбои.' },
-                  { name: 'CR2 — Ответ',    desc: 'Клиент ответил хотя бы одной фразой. Чувствителен к первому предложению бота.' },
-                  { name: 'CR3 — Встреча',  desc: 'Клиент согласился на встречу. Главная конверсия воронки для аналитика.' },
-                  { name: 'CR4 — Лид',      desc: 'Квалифицированный лид — прошёл все этапы, готов к передаче в CRM.' },
-                ].map((item, i) => (
-                  <div key={i} className="flex gap-3 py-2 border-b" style={{ borderColor: 'var(--border-subtle)' }}>
-                    <span className="text-xs font-semibold shrink-0 w-28" style={{ color: 'var(--brand-green)' }}>{item.name}</span>
-                    <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{item.desc}</span>
+                  { label: 'Всего звонков', val: data.total.toLocaleString('ru-RU') },
+                  { label: 'Средняя длительность', val: formatSec(data.avg_duration_sec) },
+                  { label: 'Суммарное время разговоров', val: formatTotalHours(data.total_talk_sec) },
+                  { label: 'Дней в периоде', val: data.by_day.length.toString() },
+                  { label: 'Среднее звонков в день', val: data.by_day.length > 0 ? Math.round(data.total / data.by_day.length).toString() : '—' },
+                  { label: 'Источник', val: 'CoMagic / Битрикс24' },
+                ].map((row, i) => (
+                  <div key={i} className="flex items-center justify-between px-4 py-2.5 rounded-lg"
+                    style={{ background: 'var(--bg-elevated)' }}>
+                    <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+                    <span className="text-xs font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{row.val}</span>
                   </div>
                 ))}
               </div>
             </div>
-            <div className="card-glass p-5">
-              <h3 className="text-sm font-semibold mb-3" style={{ color: 'var(--text-primary)' }}>Что увидели в данных</h3>
-              <div className="space-y-2.5 text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>
-                <p>
-                  <span className="font-semibold" style={{ color: 'var(--brand-green)' }}>1. Охват {(100 - silentPct).toFixed(1)}% — хорошо.</span>{' '}
-                  {data.withDialogue.toLocaleString('ru-RU')} из {data.total.toLocaleString('ru-RU')} звонков имеют транскрипт.
-                  Остальные {sc[0].toLocaleString('ru-RU')} — технический сброс до первого слова.
-                </p>
-                <p>
-                  <span className="font-semibold" style={{ color: '#ff8c00' }}>2. Клиент отвечает в {(sc[2] + sc[3] + sc[4]).toLocaleString('ru-RU')} случаях.</span>{' '}
-                  Это {data.total > 0 ? (((sc[2]+sc[3]+sc[4])/data.total)*100).toFixed(1) : 0}% от всех звонков.
-                  Большинство (этап 1 = {sc[1].toLocaleString('ru-RU')}) — бот говорил, но клиент не ответил.
-                </p>
-                <p>
-                  <span className="font-semibold" style={{ color: '#00aaff' }}>3. Лидов: {data.leads} (CR {data.overallCR.toFixed(2)}%).</span>{' '}
-                  Из тех кто ответил — {sc[2]+sc[3]+sc[4] > 0 ? ((data.leads/(sc[2]+sc[3]+sc[4]))*100).toFixed(1) : 0}% доходят до согласия на встречу.
-                </p>
-                <p>
-                  <span className="font-semibold" style={{ color: 'var(--text-primary)' }}>4. Баг с отраслью.</span>{' '}
-                  Часть диалогов содержит «кейс по ,» — пустая отрасль в скрипте.
-                  Это снижает доверие клиента. Нужно закрыть немедленно.
-                </p>
-              </div>
+          </div>
+        )}
+
+        {/* ── ВСЕ ЗВОНКИ ── */}
+        {tab === 'calls' && (
+          <div className="animate-fade-in">
+            <div className="mb-5">
+              <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>Все звонки</h1>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Полный список с фильтрацией по дате, длительности и поиском по ID
+              </p>
             </div>
+            <CallsTable calls={data.calls} />
+          </div>
+        )}
+
+        {/* ── РЕКОМЕНДАЦИИ ── */}
+        {tab === 'recommendations' && (
+          <div className="animate-fade-in">
+            <div className="mb-5">
+              <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
+                Рекомендации для роста конверсии
+              </h1>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                На основе анализа {data.total.toLocaleString('ru-RU')} звонков
+              </p>
+            </div>
+            <RecommendationsBlock data={data} />
           </div>
         )}
       </main>
     </div>
   );
+}
+
+// ── корневой компонент ─────────────────────────────────────────────────
+export default function Index() {
+  const [data, setData] = useState<CallsData | null>(null);
+
+  if (!data) return <UploadScreen onLoad={setData} />;
+  return <Dashboard data={data} onReset={() => setData(null)} />;
 }
