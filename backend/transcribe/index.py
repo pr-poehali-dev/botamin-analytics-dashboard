@@ -1,18 +1,85 @@
 """
-Транскрибирует аудиозапись звонка через Yandex SpeechKit STT (асинхронное распознавание). v2
-Принимает POST с { "audio_url": "https://..." } — ссылку на запись из CoMagic.
-Возвращает транскрипт с разделением на спикеров (оператор / клиент).
+Транскрибирует аудиозапись звонка через Yandex SpeechKit STT. v3
+Сначала проверяет кэш в БД — если транскрипт уже есть, возвращает его.
+Иначе транскрибирует и сохраняет результат в БД.
 """
 import json
 import os
 import time
 import urllib.request
-import urllib.error
-
+import psycopg2
 
 YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY', '')
+DATABASE_URL = os.environ.get('DATABASE_URL', '')
+SCHEMA = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
 STT_URL = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
 OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
+
+
+def get_db():
+    return psycopg2.connect(DATABASE_URL)
+
+
+def get_cached(comm_id: str) -> dict | None:
+    """Возвращает транскрипт из кэша БД если есть."""
+    if not comm_id:
+        return None
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        f"SELECT full_text, replicas, replica_count, operator_replicas, client_replicas FROM {SCHEMA}.call_transcripts WHERE comm_id = %s",
+        (comm_id,)
+    )
+    row = cur.fetchone()
+    cur.close()
+    conn.close()
+    if not row:
+        return None
+    return {
+        'comm_id': comm_id,
+        'full_text': row[0] or '',
+        'replicas': row[1] if row[1] else [],
+        'replica_count': row[2] or 0,
+        'operator_replicas': row[3] or 0,
+        'client_replicas': row[4] or 0,
+        'status': 'done',
+        'cached': True,
+    }
+
+
+def save_to_db(comm_id: str, audio_url: str, meta: dict, transcript: dict):
+    """Сохраняет транскрипт в БД."""
+    if not comm_id:
+        return
+    conn = get_db()
+    cur = conn.cursor()
+    cur.execute(
+        f"""INSERT INTO {SCHEMA}.call_transcripts
+            (comm_id, audio_url, date, duration, duration_sec, full_text, replicas, replica_count, operator_replicas, client_replicas)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            ON CONFLICT (comm_id) DO UPDATE SET
+                full_text = EXCLUDED.full_text,
+                replicas = EXCLUDED.replicas,
+                replica_count = EXCLUDED.replica_count,
+                operator_replicas = EXCLUDED.operator_replicas,
+                client_replicas = EXCLUDED.client_replicas
+        """,
+        (
+            comm_id,
+            audio_url,
+            meta.get('date', ''),
+            meta.get('duration', ''),
+            meta.get('duration_sec', 0),
+            transcript.get('full_text', ''),
+            json.dumps(transcript.get('replicas', []), ensure_ascii=False),
+            transcript.get('replica_count', 0),
+            transcript.get('operator_replicas', 0),
+            transcript.get('client_replicas', 0),
+        )
+    )
+    conn.commit()
+    cur.close()
+    conn.close()
 
 
 def yandex_request(url: str, method: str = 'GET', body: dict = None) -> dict:
@@ -31,7 +98,6 @@ def yandex_request(url: str, method: str = 'GET', body: dict = None) -> dict:
 
 
 def start_recognition(audio_url: str) -> str:
-    """Запускает асинхронное распознавание, возвращает operation_id."""
     body = {
         'config': {
             'specification': {
@@ -43,16 +109,13 @@ def start_recognition(audio_url: str) -> str:
                 'literatureText': False,
             }
         },
-        'audio': {
-            'uri': audio_url,
-        }
+        'audio': {'uri': audio_url}
     }
     result = yandex_request(STT_URL, method='POST', body=body)
     return result.get('id', '')
 
 
 def poll_operation(operation_id: str, max_wait: int = 25) -> dict:
-    """Опрашивает статус операции до завершения (макс max_wait секунд)."""
     deadline = time.time() + max_wait
     while time.time() < deadline:
         result = yandex_request(OPERATION_URL + operation_id)
@@ -63,13 +126,10 @@ def poll_operation(operation_id: str, max_wait: int = 25) -> dict:
 
 
 def parse_transcript(operation_result: dict) -> dict:
-    """Парсит результат SpeechKit в удобный формат с репликами."""
     if 'error' in operation_result:
         return {'error': operation_result['error'].get('message', 'Ошибка распознавания')}
 
-    response = operation_result.get('response', {})
-    chunks = response.get('chunks', [])
-
+    chunks = operation_result.get('response', {}).get('chunks', [])
     full_text = []
     replicas = []
 
@@ -82,17 +142,15 @@ def parse_transcript(operation_result: dict) -> dict:
         if not text:
             continue
 
-        # Определяем спикера (channelTag: 1=оператор, 2=клиент в стерео записи)
         channel = chunk.get('channelTag', '1')
         speaker = 'operator' if channel == '1' else 'client'
         speaker_label = 'Оператор' if speaker == 'operator' else 'Клиент'
 
-        # Время начала реплики
         start_time = 0.0
         words = best.get('words', [])
         if words:
             st = words[0].get('startTime', '0s')
-            start_time = float(st.replace('s', '')) if isinstance(st, str) else float(st)
+            start_time = float(str(st).replace('s', ''))
 
         replicas.append({
             'speaker': speaker,
@@ -102,7 +160,6 @@ def parse_transcript(operation_result: dict) -> dict:
         })
         full_text.append(f'{speaker_label}: {text}')
 
-    # Сортируем реплики по времени
     replicas.sort(key=lambda r: r['start_time'])
 
     return {
@@ -117,7 +174,7 @@ def parse_transcript(operation_result: dict) -> dict:
 def handler(event: dict, context) -> dict:
     cors = {
         'Access-Control-Allow-Origin': '*',
-        'Access-Control-Allow-Methods': 'POST, OPTIONS',
+        'Access-Control-Allow-Methods': 'POST, GET, OPTIONS',
         'Access-Control-Allow-Headers': 'Content-Type',
     }
 
@@ -125,57 +182,60 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': cors, 'body': ''}
 
     if not YANDEX_API_KEY:
-        return {
-            'statusCode': 500,
-            'headers': cors,
-            'body': json.dumps({'error': 'YANDEX_API_KEY не настроен'}, ensure_ascii=False),
-        }
+        return {'statusCode': 500, 'headers': cors,
+                'body': json.dumps({'error': 'YANDEX_API_KEY не настроен'}, ensure_ascii=False)}
 
     body_raw = event.get('body', '{}') or '{}'
-    if isinstance(body_raw, str):
-        body = json.loads(body_raw)
-    elif isinstance(body_raw, dict):
-        body = body_raw
-    else:
-        body = {}
+    body = json.loads(body_raw) if isinstance(body_raw, str) else (body_raw or {})
+
     audio_url = body.get('audio_url', '')
     comm_id = body.get('comm_id', '')
+    meta = {
+        'date': body.get('date', ''),
+        'duration': body.get('duration', ''),
+        'duration_sec': body.get('duration_sec', 0),
+    }
 
     if not audio_url:
+        return {'statusCode': 400, 'headers': cors,
+                'body': json.dumps({'error': 'Нужен audio_url'}, ensure_ascii=False)}
+
+    # Проверяем кэш
+    cached = get_cached(comm_id)
+    if cached:
         return {
-            'statusCode': 400,
-            'headers': cors,
-            'body': json.dumps({'error': 'Нужен audio_url'}, ensure_ascii=False),
+            'statusCode': 200,
+            'headers': {**cors, 'Content-Type': 'application/json'},
+            'body': json.dumps(cached, ensure_ascii=False),
         }
 
-    # Запускаем распознавание
+    # Транскрибируем
     operation_id = start_recognition(audio_url)
     if not operation_id:
-        return {
-            'statusCode': 500,
-            'headers': cors,
-            'body': json.dumps({'error': 'Не удалось запустить распознавание'}, ensure_ascii=False),
-        }
+        return {'statusCode': 500, 'headers': cors,
+                'body': json.dumps({'error': 'Не удалось запустить распознавание'}, ensure_ascii=False)}
 
-    # Ждём результат (до 25 сек в рамках таймаута функции)
     operation_result = poll_operation(operation_id, max_wait=25)
 
     if not operation_result.get('done'):
-        # Возвращаем operation_id — фронт сам опросит позже
         return {
             'statusCode': 202,
             'headers': cors,
-            'body': json.dumps({
-                'status': 'pending',
-                'operation_id': operation_id,
-                'comm_id': comm_id,
-            }, ensure_ascii=False),
+            'body': json.dumps({'status': 'pending', 'operation_id': operation_id, 'comm_id': comm_id},
+                               ensure_ascii=False),
         }
 
     transcript = parse_transcript(operation_result)
+    if 'error' in transcript:
+        return {'statusCode': 500, 'headers': cors,
+                'body': json.dumps({'error': transcript['error']}, ensure_ascii=False)}
+
+    # Сохраняем в БД
+    save_to_db(comm_id, audio_url, meta, transcript)
+
     transcript['comm_id'] = comm_id
-    transcript['operation_id'] = operation_id
     transcript['status'] = 'done'
+    transcript['cached'] = False
 
     return {
         'statusCode': 200,

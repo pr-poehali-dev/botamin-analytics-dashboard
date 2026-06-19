@@ -44,6 +44,7 @@ interface TranscriptResult {
   analysis?: Analysis;
   status: JobStatus;
   error?: string;
+  cached?: boolean;
 }
 
 const interestColor = { high: 'var(--brand-green)', medium: '#ff8c00', low: '#ff4444' };
@@ -250,7 +251,13 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
       const res = await fetch(TRANSCRIBE_URL, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ audio_url: call.record_url, comm_id: call.comm_id }),
+        body: JSON.stringify({
+          audio_url: call.record_url,
+          comm_id: call.comm_id,
+          date: call.date,
+          duration: call.duration,
+          duration_sec: call.duration_sec,
+        }),
       });
       const data = await res.json();
 
@@ -271,6 +278,7 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
         operator_replicas: data.operator_replicas || 0,
         client_replicas: data.client_replicas || 0,
         status: 'done',
+        cached: data.cached === true,
       });
     } catch (e) {
       setResult(prev => prev ? { ...prev, status: 'error', error: 'Ошибка соединения' } : null);
@@ -292,7 +300,7 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
         }),
       });
       const analysis = await res.json();
-      setResult(prev => prev ? { ...prev, status: 'done', analysis } : null);
+      setResult(prev => prev ? { ...prev, status: 'done', cached: prev.cached, analysis } : null);
     } catch {
       setResult(prev => prev ? { ...prev, status: 'done' } : null);
     }
@@ -405,9 +413,18 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
             {/* Заголовок */}
             <div className="flex items-center justify-between mb-5">
               <div>
-                <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-                  Звонок {selectedCall.date} · {selectedCall.duration}
-                </h3>
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+                    Звонок {selectedCall.date} · {selectedCall.duration}
+                  </h3>
+                  {result.cached && (
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)' }}>
+                      <Icon name="Database" size={10} />
+                      из кэша
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   ID: {selectedCall.comm_id} · {selectedCall.call_type}
                 </p>
