@@ -14,7 +14,7 @@ SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics
 
 GEMINI_URL = (
     'https://generativelanguage.googleapis.com/v1beta/models/'
-    'gemini-1.5-flash:generateContent?key='
+    'gemini-2.0-flash:generateContent?key='
 )
 
 SYSTEM_PROMPT = """Ты эксперт по анализу звонков колл-центра рекламного агентства СайтАктив.
