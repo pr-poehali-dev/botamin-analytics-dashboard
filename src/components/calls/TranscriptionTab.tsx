@@ -55,6 +55,35 @@ export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone 
     });
   };
 
+  const DELETE_KEY = 'deleted_calls';
+  const loadDeleted = (): Set<string> => {
+    try { return new Set(JSON.parse(localStorage.getItem(DELETE_KEY) || '[]')); } catch { return new Set(); }
+  };
+  const [deletedIds, setDeletedIds] = useState<Set<string>>(loadDeleted);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+
+  const deleteCall = (comm_id: string) => {
+    // Убираем из deletedIds
+    setDeletedIds(prev => {
+      const next = new Set(prev); next.add(comm_id);
+      try { localStorage.setItem(DELETE_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+    // Убираем из doneMap
+    setDoneMap(prev => {
+      const next = { ...prev }; delete next[comm_id]; return next;
+    });
+    // Убираем из ignoreMap
+    setIgnoreMap(prev => {
+      const next = { ...prev }; delete next[comm_id];
+      try { localStorage.setItem(IGNORE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    setSelectedCall(null);
+    setResult(null);
+    setShowDeleteConfirm(false);
+  };
+
   const loadLocalDoneMap = (): DoneMap => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (_e) { return {}; }
   };
@@ -324,7 +353,7 @@ export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone 
         )}
 
         <CallsList
-          calls={calls}
+          calls={calls.filter(c => !deletedIds.has(c.comm_id))}
           selectedCall={selectedCall}
           result={result}
           doneMap={doneMap}
@@ -421,6 +450,40 @@ export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone 
                         style={{ color: 'var(--text-muted)' }}>
                         Отмена
                       </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Кнопка Удалить */}
+                <div className="relative">
+                  <button
+                    onClick={() => setShowDeleteConfirm(v => !v)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all hover:opacity-80"
+                    style={{ background: 'rgba(255,68,68,0.08)', border: '1px solid rgba(255,68,68,0.25)', color: '#ff4444' }}>
+                    <Icon name="Trash2" size={12} />
+                    Удалить
+                  </button>
+                  {showDeleteConfirm && (
+                    <div className="absolute right-0 top-full mt-1 w-60 rounded-xl z-30 shadow-2xl p-4 space-y-3"
+                      style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,68,68,0.3)' }}>
+                      <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Удалить звонок?</p>
+                      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                        Звонок исчезнет из списка транскрибации. Вернуть нельзя.
+                      </p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => deleteCall(selectedCall.comm_id)}
+                          className="flex-1 py-1.5 rounded-lg text-xs font-semibold transition-all hover:opacity-80"
+                          style={{ background: '#ff4444', color: '#fff' }}>
+                          Удалить
+                        </button>
+                        <button
+                          onClick={() => setShowDeleteConfirm(false)}
+                          className="flex-1 py-1.5 rounded-lg text-xs transition-all hover:opacity-80"
+                          style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+                          Отмена
+                        </button>
+                      </div>
                     </div>
                   )}
                 </div>
