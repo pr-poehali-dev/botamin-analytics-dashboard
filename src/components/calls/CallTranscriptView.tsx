@@ -56,29 +56,33 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
           {showReplicas ? 'Скрыть' : 'Показать'} транскрипт ({result.replica_count} реплик)
         </button>
         {showReplicas && (
-          <div className="space-y-2 max-h-96 overflow-y-auto pr-1">
+          <div className="space-y-2 overflow-y-auto pr-1">
             {result.replicas.map((r, i) => (
-              <div key={i} className={`flex gap-3 ${r.speaker === 'operator' ? '' : 'flex-row-reverse'}`}>
-                <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                  style={{
-                    background: r.speaker === 'operator' ? 'rgba(0,255,136,0.2)' : 'rgba(0,170,255,0.2)',
-                    color: r.speaker === 'operator' ? 'var(--brand-green)' : '#00aaff',
-                  }}>
-                  {r.speaker === 'operator' ? 'О' : 'К'}
-                </div>
-                <div className={`flex-1 ${r.speaker === 'client' ? 'text-right' : ''}`}>
-                  <div className="text-xs mb-0.5" style={{ color: 'var(--text-muted)' }}>
+              <div key={i} className={`flex gap-3 ${r.speaker === 'client' ? 'justify-end' : ''}`}>
+                {r.speaker === 'operator' && (
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                    style={{ background: 'rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
+                    О
+                  </div>
+                )}
+                <div className="max-w-[75%]">
+                  <div className={`text-xs mb-0.5 ${r.speaker === 'client' ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>
                     {r.speaker_label} · {r.start_time}с
                   </div>
-                  <div className="inline-block px-3 py-2 rounded-xl text-xs leading-relaxed"
+                  <div className="px-3 py-2 rounded-xl text-xs leading-relaxed"
                     style={{
                       background: r.speaker === 'operator' ? 'var(--bg-elevated)' : 'rgba(0,170,255,0.1)',
                       color: 'var(--text-secondary)',
-                      maxWidth: '85%',
                     }}>
                     {r.text}
                   </div>
                 </div>
+                {r.speaker === 'client' && (
+                  <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+                    style={{ background: 'rgba(0,170,255,0.2)', color: '#00aaff' }}>
+                    К
+                  </div>
+                )}
               </div>
             ))}
           </div>
