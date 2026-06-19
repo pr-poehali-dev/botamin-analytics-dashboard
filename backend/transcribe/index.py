@@ -112,32 +112,20 @@ def parse_transcript(op: dict) -> dict:
     replicas  = []
     full_text = []
     seen      = set()
-    has_both  = '1' in channels and '2' in channels
 
-    if has_both:
-        # Стерео: канал 1 = оператор, канал 2 = клиент.
-        # SpeechKit дублирует реплики на оба канала — убираем дубли.
-        ch1_texts = {r['text'] for r in raw if r['channel'] == '1'}
-        for r in sorted(raw, key=lambda x: x['start']):
-            if r['channel'] == '1':
-                speaker = 'operator'
-            else:
-                if r['text'] in ch1_texts:
-                    continue  # дубль с канала 1
-                speaker = 'client'
-            key = (r['start'], r['text'][:40])
-            if key in seen:
-                continue
+    # Дедупликация: убираем полные дубли (одинаковый текст + время)
+    unique_raw = []
+    for r in sorted(raw, key=lambda x: x['start']):
+        key = (r['start'], r['text'][:60])
+        if key not in seen:
             seen.add(key)
-            label = 'Оператор' if speaker == 'operator' else 'Клиент'
-            replicas.append({'speaker': speaker, 'speaker_label': label,
-                             'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
-            full_text.append(f'{label}: {r["text"]}')
+            unique_raw.append(r)
 
-    elif len(speaker_tags) >= 2:
-        # Моно + диаризация по speakerTag
-        # Первый спикер с длинной фразой = оператор (он звонит и представляется)
-        sorted_raw = sorted(raw, key=lambda x: x['start'])
+    print(f'[DEBUG] raw={len(raw)} unique={len(unique_raw)} speakerTags={speaker_tags}')
+
+    if len(speaker_tags) >= 2:
+        # Яндекс дал speakerTag — используем его
+        sorted_raw   = unique_raw
         operator_tag = None
         for r in sorted_raw:
             if r['speaker_tag'] and len(r['text']) > 15:
@@ -145,12 +133,7 @@ def parse_transcript(op: dict) -> dict:
                 break
         if operator_tag is None and sorted_raw:
             operator_tag = sorted_raw[0]['speaker_tag']
-
         for r in sorted_raw:
-            key = (r['start'], r['text'][:40])
-            if key in seen:
-                continue
-            seen.add(key)
             tag     = r['speaker_tag']
             speaker = 'operator' if tag == operator_tag else 'client'
             label   = 'Оператор' if speaker == 'operator' else 'Клиент'
@@ -159,15 +142,32 @@ def parse_transcript(op: dict) -> dict:
             full_text.append(f'{label}: {r["text"]}')
 
     else:
-        # Моно без диаризации
-        for r in sorted(raw, key=lambda x: x['start']):
-            key = (r['start'], r['text'][:40])
-            if key in seen:
-                continue
-            seen.add(key)
-            replicas.append({'speaker': 'unknown', 'speaker_label': 'Неизвестно',
-                             'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
-            full_text.append(r['text'])
+        # speakerTag нет — делаем эвристику по паузам между репликами.
+        # Оператор: первый говорит, длинные фразы, представляется.
+        # Между сменой спикера обычно пауза > 0.5с.
+        # Стратегия: первая реплика длиннее 20 символов = оператор,
+        # потом чередуем по паузам (если пауза > 1с — смена спикера).
+        sorted_raw = unique_raw
+        if not sorted_raw:
+            pass
+        else:
+            # Первый спикер — оператор (он звонит)
+            current_speaker = 'operator'
+            prev_end        = 0.0
+
+            for i, r in enumerate(sorted_raw):
+                pause = r['start'] - prev_end
+                # Смена спикера если пауза > 0.8с и уже есть хотя бы одна реплика
+                if i > 0 and pause > 0.8:
+                    current_speaker = 'client' if current_speaker == 'operator' else 'operator'
+
+                speaker = current_speaker
+                label   = 'Оператор' if speaker == 'operator' else 'Клиент'
+                replicas.append({'speaker': speaker, 'speaker_label': label,
+                                 'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
+                full_text.append(f'{label}: {r["text"]}')
+                # Примерное время конца = начало + длина текста / 10 символов в секунду
+                prev_end = r['start'] + max(len(r['text']) / 10, 1.0)
 
     replicas.sort(key=lambda r: r['start_time'])
 
@@ -238,20 +238,20 @@ def get_cached(comm_id):
             'client_replicas': row[4] or 0, 'status': 'done', 'cached': True}
 
 
-def save_transcript(comm_id, date, duration, duration_sec, parsed):
+def save_transcript(comm_id, date, duration, duration_sec, parsed, audio_url=''):
     conn = get_db(); cur = conn.cursor()
     cur.execute(
         f"""INSERT INTO {SCHEMA}.call_transcripts
-            (comm_id,date,duration,duration_sec,full_text,replicas,
+            (comm_id,audio_url,date,duration,duration_sec,full_text,replicas,
              replica_count,operator_replicas,client_replicas)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (comm_id) DO UPDATE SET
               full_text=EXCLUDED.full_text, replicas=EXCLUDED.replicas,
               replica_count=EXCLUDED.replica_count,
               operator_replicas=EXCLUDED.operator_replicas,
               client_replicas=EXCLUDED.client_replicas,
               updated_at=NOW()""",
-        (comm_id, date, duration, duration_sec,
+        (comm_id, audio_url, date, duration, duration_sec,
          parsed['full_text'],
          json.dumps(parsed['replicas'], ensure_ascii=False),
          parsed['replica_count'], parsed['operator_replicas'], parsed['client_replicas'])
@@ -343,7 +343,7 @@ def handler(event: dict, context) -> dict:
     print(f'[DONE] {comm_id}: replicas={parsed.get("replica_count")} op={parsed.get("operator_replicas")} cl={parsed.get("client_replicas")}')
 
     if parsed.get('replica_count', 0) > 0 or parsed.get('all_ivr'):
-        save_transcript(comm_id, date, duration, duration_sec, parsed)
+        save_transcript(comm_id, date, duration, duration_sec, parsed, audio_url)
 
     return {
         'statusCode': 200,
