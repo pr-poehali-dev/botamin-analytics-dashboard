@@ -151,8 +151,8 @@ def parse_transcript(op: dict) -> dict:
         if use_speaker_tag and r['speaker_tag'] is not None:
             speaker = speaker_map.get(r['speaker_tag'], 'client')
         else:
-            # Стерео: канал 1=клиент (звонящий), канал 2=оператор (принял)
-            speaker = 'client' if r['channel'] == '1' else 'operator'
+            # Стерео: канал 1=наш оператор (исходящий), канал 2=клиент
+            speaker = 'operator' if r['channel'] == '1' else 'client'
         label = 'Оператор' if speaker == 'operator' else 'Клиент'
         replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
         full_text.append(f'{label}: {r["text"]}')
