@@ -457,7 +457,23 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
               <div className="flex flex-col items-center justify-center py-20 gap-3">
                 <Icon name="AlertTriangle" size={32} style={{ color: '#ff4444' }} />
                 <p className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Ошибка транскрибации</p>
-                <p className="text-xs text-center max-w-sm" style={{ color: 'var(--text-muted)' }}>{result.error}</p>
+                {result.error === 'rate_limit' ? (
+                  <div className="text-center max-w-sm space-y-2">
+                    <p className="text-sm font-medium" style={{ color: '#ff8c00' }}>
+                      Исчерпан лимит Yandex SpeechKit
+                    </p>
+                    <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                      500 запросов в час — лимит исчерпан из-за тестовых запросов.
+                    </p>
+                    <p className="text-xs px-4 py-2 rounded-lg"
+                      style={{ background: 'rgba(255,140,0,0.1)', color: '#ff8c00' }}>
+                      Квота сбрасывается в начале каждого часа.<br/>
+                      Попробуйте снова через несколько минут.
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-xs text-center max-w-sm" style={{ color: 'var(--text-muted)' }}>{result.error}</p>
+                )}
                 <button onClick={() => handleTranscribe(selectedCall)}
                   className="px-4 py-2 rounded-lg text-xs font-medium mt-2"
                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
