@@ -16,8 +16,8 @@ GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/'
 # Пробуем модели по очереди при rate limit
 GEMINI_MODELS = [
     'gemini-2.0-flash-lite',
-    'gemini-1.5-flash-8b',
-    'gemini-1.5-flash',
+    'gemini-2.0-flash',
+    'gemini-1.5-flash-latest',
 ]
 
 SYSTEM_PROMPT = """Ты эксперт по анализу звонков колл-центра рекламного агентства СайтАктив.
@@ -167,10 +167,8 @@ def analyze(transcript: str, duration_sec: int) -> dict:
             print(f'[GEMINI] used model={model}')
             break
         except urllib.error.HTTPError as e:
-            if e.code in (429, 503):
-                print(f'[GEMINI] model={model} rate limited ({e.code}), trying next')
-                continue
-            raise
+            print(f'[GEMINI] model={model} error {e.code}, trying next')
+            continue
 
     if result is None:
         raise Exception('Все модели Gemini недоступны (rate limit)')
