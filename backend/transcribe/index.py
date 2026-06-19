@@ -1,180 +1,144 @@
 """
-Транскрибация через Yandex SpeechKit v2 longRunningRecognize.
+Транскрибация через AssemblyAI с диаризацией спикеров.
 Схема:
-  POST: скачивает MP3 → загружает в YOS → запускает async STT → ждёт результат
+  POST: скачивает MP3 → загружает в AssemblyAI → запускает транскрибацию → ждёт результат
   GET ?comm_id=...: возвращает кэш из БД
 """
 import json
 import os
 import time
 import urllib.request
+import urllib.error
 import psycopg2
 
-YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY', '')
+ASSEMBLYAI_KEY = os.environ.get('ASSEMBLYAI_API_KEY', '')
 DATABASE_URL   = os.environ.get('DATABASE_URL', '')
 SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
-YOS_KEY        = os.environ.get('YOS_ACCESS_KEY', '')
-YOS_SECRET     = os.environ.get('YOS_SECRET_KEY', '')
-YOS_BUCKET     = 'siteactiv-audio'
-YOS_REGION     = 'ru-central1'
-YOS_HOST       = 'storage.yandexcloud.net'
 
-STT_ASYNC_URL = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
-OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
+UPLOAD_URL      = 'https://api.assemblyai.com/v2/upload'
+TRANSCRIPT_URL  = 'https://api.assemblyai.com/v2/transcript'
 
 
-# ── S3 upload через boto3 ────────────────────────────────────────────────
+# ── AssemblyAI helpers ───────────────────────────────────────────────────
 
-def yos_upload(data: bytes, key: str) -> str:
-    import boto3
-    s3 = boto3.client(
-        's3',
-        endpoint_url=f'https://{YOS_HOST}',
-        aws_access_key_id=YOS_KEY,
-        aws_secret_access_key=YOS_SECRET,
-        region_name=YOS_REGION,
-    )
-    s3.put_object(Bucket=YOS_BUCKET, Key=key, Body=data, ContentType='audio/mpeg')
-    return f'https://{YOS_HOST}/{YOS_BUCKET}/{key}'
-
-
-# ── SpeechKit async ──────────────────────────────────────────────────────
-
-def ya_request(url, method='GET', body=None):
-    data = json.dumps(body).encode() if body else None
-    req  = urllib.request.Request(
+def aai_request(url, method='GET', body=None, data=None, content_type='application/json'):
+    if body is not None:
+        data = json.dumps(body).encode('utf-8')
+    req = urllib.request.Request(
         url, data=data, method=method,
-        headers={'Authorization': f'Api-Key {YANDEX_API_KEY}', 'Content-Type': 'application/json'},
+        headers={
+            'Authorization': ASSEMBLYAI_KEY,
+            'Content-Type': content_type,
+        }
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
+    with urllib.request.urlopen(req, timeout=30) as resp:
         return json.loads(resp.read())
 
 
-def start_recognition(yos_url: str) -> str:
-    # Без audioChannelCount — Яндекс микширует каналы в моно и делает диаризацию по голосу
-    body = {
-        'config': {'specification': {
-            'languageCode':          'ru-RU',
-            'model':                 'general',
-            'audioEncoding':         'MP3',
-            'enableSpeakerLabeling': True,
-            'literature_text':       False,
-        }},
-        'audio': {'uri': yos_url},
-    }
-    result = ya_request(STT_ASYNC_URL, method='POST', body=body)
-    return result.get('id', '')
+def upload_audio(audio_bytes: bytes) -> str:
+    """Загружает аудио в AssemblyAI, возвращает upload_url."""
+    req = urllib.request.Request(
+        UPLOAD_URL, data=audio_bytes, method='POST',
+        headers={
+            'Authorization': ASSEMBLYAI_KEY,
+            'Content-Type': 'application/octet-stream',
+        }
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        result = json.loads(resp.read())
+    return result['upload_url']
 
 
-def poll_operation(op_id: str, max_wait: int = 25) -> dict:
+def start_transcription(upload_url: str) -> str:
+    """Запускает транскрибацию с диаризацией, возвращает transcript_id."""
+    result = aai_request(TRANSCRIPT_URL, method='POST', body={
+        'audio_url':         upload_url,
+        'language_code':     'ru',
+        'speaker_labels':    True,   # диаризация по голосу
+        'speakers_expected': 2,      # оператор + клиент
+    })
+    return result['id']
+
+
+def poll_transcription(transcript_id: str, max_wait: int = 55) -> dict:
+    """Ждёт завершения транскрибации."""
+    url      = f'{TRANSCRIPT_URL}/{transcript_id}'
     deadline = time.time() + max_wait
     while time.time() < deadline:
-        op = ya_request(OPERATION_URL + op_id)
-        if op.get('done'):
-            return op
-        time.sleep(3)
-    return {'done': False, '_op_id': op_id}
+        result = aai_request(url)
+        status = result.get('status')
+        print(f'[AAI] status={status}')
+        if status == 'completed':
+            return result
+        if status == 'error':
+            return {'status': 'error', 'error': result.get('error', 'Ошибка AssemblyAI')}
+        time.sleep(4)
+    return {'status': 'processing', '_id': transcript_id}
 
 
-# ── Парсинг транскрипта ──────────────────────────────────────────────────
+# ── Парсинг результата AssemblyAI ────────────────────────────────────────
 
-def parse_transcript(op: dict) -> dict:
-    if 'error' in op:
-        return {'error': op['error'].get('message', 'Ошибка распознавания')}
+def parse_assemblyai(result: dict) -> dict:
+    """Парсит ответ AssemblyAI в наш формат."""
+    utterances = result.get('utterances') or []
 
-    chunks = op.get('response', {}).get('chunks', [])
-    raw = []
-    for chunk in chunks:
-        alts = chunk.get('alternatives', [])
-        if not alts:
-            continue
-        best = alts[0]
-        text = best.get('text', '').strip()
+    if not utterances:
+        # Fallback: нет диаризации — берём words
+        words = result.get('words') or []
+        text  = result.get('text', '')
         if not text:
-            continue
-        words = best.get('words', [])
-        start = 0.0
-        speaker_tag = None
-        if words:
-            st = words[0].get('startTime', '0s')
-            start = float(str(st).replace('s', ''))
-            speaker_tag = words[0].get('speakerTag')
-        channel = str(chunk.get('channelTag', '1'))
-        raw.append({'text': text, 'start': round(start, 1),
-                    'speaker_tag': speaker_tag, 'channel': channel})
+            return {'error': 'Транскрипт пуст'}
+        return {
+            'full_text':         text,
+            'replicas':          [{'speaker': 'unknown', 'speaker_label': 'Неизвестно',
+                                   'text': text, 'start_time': 0.0, 'segment': 'live'}],
+            'replica_count':     1,
+            'operator_replicas': 0,
+            'client_replicas':   0,
+            'has_ivr':           False,
+            'all_ivr':           False,
+        }
 
-    channels     = set(r['channel'] for r in raw)
-    speaker_tags = set(r['speaker_tag'] for r in raw if r['speaker_tag'] is not None)
-    print(f'[DEBUG] channels={channels} speakerTags={speaker_tags}')
-    for r in raw:
-        print(f'[DEBUG] ch={r["channel"]} tag={r["speaker_tag"]} t={r["start"]} text={r["text"][:60]}')
+    # Определяем кто оператор: обычно первым говорит много (представляется)
+    # AssemblyAI даёт speaker "A", "B", "C"...
+    # Считаем суммарное кол-во слов на каждого спикера в первых 30 секундах
+    speaker_words_early = {}
+    for u in utterances:
+        start_sec = u.get('start', 0) / 1000.0
+        if start_sec < 30:
+            spk = u.get('speaker', 'A')
+            wc  = len(u.get('words', []))
+            speaker_words_early[spk] = speaker_words_early.get(spk, 0) + wc
+
+    # Спикер с наибольшим кол-вом слов в начале = оператор
+    operator_spk = max(speaker_words_early, key=speaker_words_early.get) if speaker_words_early else 'A'
+    print(f'[AAI] speaker_words_early={speaker_words_early} operator={operator_spk}')
 
     replicas  = []
     full_text = []
-    seen      = set()
 
-    # Дедупликация: убираем полные дубли (одинаковый текст + время)
-    unique_raw = []
-    for r in sorted(raw, key=lambda x: x['start']):
-        key = (r['start'], r['text'][:60])
-        if key not in seen:
-            seen.add(key)
-            unique_raw.append(r)
+    for u in utterances:
+        spk       = u.get('speaker', 'A')
+        text      = u.get('text', '').strip()
+        start_sec = round(u.get('start', 0) / 1000.0, 1)
+        if not text:
+            continue
 
-    print(f'[DEBUG] raw={len(raw)} unique={len(unique_raw)} speakerTags={speaker_tags}')
+        speaker = 'operator' if spk == operator_spk else 'client'
+        label   = 'Оператор' if speaker == 'operator' else 'Клиент'
+        replicas.append({
+            'speaker':       speaker,
+            'speaker_label': label,
+            'text':          text,
+            'start_time':    start_sec,
+            'segment':       'live',
+        })
+        full_text.append(f'{label}: {text}')
 
-    if len(speaker_tags) >= 2:
-        # Яндекс дал speakerTag — используем его
-        sorted_raw   = unique_raw
-        operator_tag = None
-        for r in sorted_raw:
-            if r['speaker_tag'] and len(r['text']) > 15:
-                operator_tag = r['speaker_tag']
-                break
-        if operator_tag is None and sorted_raw:
-            operator_tag = sorted_raw[0]['speaker_tag']
-        for r in sorted_raw:
-            tag     = r['speaker_tag']
-            speaker = 'operator' if tag == operator_tag else 'client'
-            label   = 'Оператор' if speaker == 'operator' else 'Клиент'
-            replicas.append({'speaker': speaker, 'speaker_label': label,
-                             'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
-            full_text.append(f'{label}: {r["text"]}')
-
-    else:
-        # speakerTag нет — делаем эвристику по паузам между репликами.
-        # Оператор: первый говорит, длинные фразы, представляется.
-        # Между сменой спикера обычно пауза > 0.5с.
-        # Стратегия: первая реплика длиннее 20 символов = оператор,
-        # потом чередуем по паузам (если пауза > 1с — смена спикера).
-        sorted_raw = unique_raw
-        if not sorted_raw:
-            pass
-        else:
-            # Первый спикер — оператор (он звонит)
-            current_speaker = 'operator'
-            prev_end        = 0.0
-
-            for i, r in enumerate(sorted_raw):
-                pause = r['start'] - prev_end
-                # Смена спикера если пауза > 0.8с и уже есть хотя бы одна реплика
-                if i > 0 and pause > 0.8:
-                    current_speaker = 'client' if current_speaker == 'operator' else 'operator'
-
-                speaker = current_speaker
-                label   = 'Оператор' if speaker == 'operator' else 'Клиент'
-                replicas.append({'speaker': speaker, 'speaker_label': label,
-                                 'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
-                full_text.append(f'{label}: {r["text"]}')
-                # Примерное время конца = начало + длина текста / 10 символов в секунду
-                prev_end = r['start'] + max(len(r['text']) / 10, 1.0)
-
-    replicas.sort(key=lambda r: r['start_time'])
-
-    # IVR детект
+    # IVR детект в начале
     ivr_kw = ['нажмите', 'внутренний номер', 'дождитесь ответа', 'ваш звонок',
                'для соединения', 'записываются', 'контроля качества',
-               'добро пожаловать', 'вы позвонили']
+               'добро пожаловать', 'вы позвонили', 'приветствует']
 
     def is_ivr(text):
         t = text.lower()
@@ -271,7 +235,7 @@ CORS = {
 # ── Handler ──────────────────────────────────────────────────────────────
 
 def handler(event: dict, context) -> dict:
-    """Транскрибирует звонок через Yandex SpeechKit с диаризацией."""
+    """Транскрибирует звонок через AssemblyAI с диаризацией спикеров по голосу."""
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
@@ -280,22 +244,10 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         params  = event.get('queryStringParameters') or {}
         comm_id = params.get('comm_id', '')
-        op_id   = params.get('operation_id', '')
-
-        cached = get_cached(comm_id)
+        cached  = get_cached(comm_id)
         if cached:
             return {'statusCode': 200, 'headers': CORS,
                     'body': json.dumps({**cached, 'status': 'done'}, ensure_ascii=False)}
-
-        if op_id:
-            op = ya_request(OPERATION_URL + op_id)
-            if op.get('done'):
-                parsed = parse_transcript(op)
-                return {'statusCode': 200, 'headers': CORS,
-                        'body': json.dumps({**parsed, 'status': 'done'}, ensure_ascii=False)}
-            return {'statusCode': 200, 'headers': CORS,
-                    'body': json.dumps({'status': 'processing', 'operation_id': op_id}, ensure_ascii=False)}
-
         return {'statusCode': 200, 'headers': CORS,
                 'body': json.dumps({'status': 'processing'}, ensure_ascii=False)}
 
@@ -316,30 +268,35 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 400, 'headers': CORS,
                 'body': json.dumps({'error': 'нет audio_url'}, ensure_ascii=False)}
 
+    # 1. Скачиваем аудио
     print(f'[AUDIO] downloading {comm_id}')
     audio_bytes = download_audio(audio_url)
     print(f'[AUDIO] {comm_id}: {len(audio_bytes)} bytes')
 
-    yos_key = f'transcribe/{comm_id}.mp3'
-    print(f'[YOS] uploading {comm_id}')
-    yos_url = yos_upload(audio_bytes, yos_key)
-    print(f'[YOS] done')
+    # 2. Загружаем в AssemblyAI
+    print(f'[AAI] uploading {comm_id}')
+    upload_url = upload_audio(audio_bytes)
+    print(f'[AAI] uploaded ok')
 
-    op_id = start_recognition(yos_url)
-    print(f'[STT] operation_id={op_id}')
+    # 3. Запускаем транскрибацию
+    transcript_id = start_transcription(upload_url)
+    print(f'[AAI] transcript_id={transcript_id}')
 
-    if not op_id:
+    # 4. Ждём результат
+    result = poll_transcription(transcript_id, max_wait=55)
+
+    if result.get('status') == 'processing':
         return {'statusCode': 200, 'headers': CORS,
-                'body': json.dumps({'error': 'Не удалось запустить распознавание'}, ensure_ascii=False)}
+                'body': json.dumps({'status': 'processing', 'comm_id': comm_id,
+                                    'transcript_id': transcript_id}, ensure_ascii=False)}
 
-    op = poll_operation(op_id, max_wait=25)
-
-    if not op.get('done'):
+    if result.get('status') == 'error':
         return {'statusCode': 200, 'headers': CORS,
-                'body': json.dumps({'status': 'processing', 'operation_id': op_id,
-                                    'comm_id': comm_id}, ensure_ascii=False)}
+                'body': json.dumps({'error': result.get('error', 'Ошибка транскрибации')},
+                                   ensure_ascii=False)}
 
-    parsed = parse_transcript(op)
+    # 5. Парсим и сохраняем
+    parsed = parse_assemblyai(result)
     print(f'[DONE] {comm_id}: replicas={parsed.get("replica_count")} op={parsed.get("operator_replicas")} cl={parsed.get("client_replicas")}')
 
     if parsed.get('replica_count', 0) > 0 or parsed.get('all_ivr'):
