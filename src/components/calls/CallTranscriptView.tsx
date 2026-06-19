@@ -5,11 +5,26 @@ import CallAnalysisCard from '@/components/calls/CallAnalysisCard';
 
 export default function CallTranscriptView({ result, onAnalyze }: { result: TranscriptResult; onAnalyze: () => void }) {
   const [showReplicas, setShowReplicas] = useState(true);
-  const [showIvr, setShowIvr] = useState(false);
+  const [showIvr, setShowIvr]           = useState(false);
+  const [swapped, setSwapped]           = useState(false);
 
-  const ivrReplicas = result.replicas.filter((r: Replica) => r.segment === 'ivr');
-  const liveReplicas = result.replicas.filter((r: Replica) => r.segment === 'live' || !r.segment);
+  // Применяем своп: меняем operator ↔ client в репликах
+  const applySwap = (r: Replica): Replica => {
+    if (!swapped) return r;
+    if (r.speaker === 'operator') return { ...r, speaker: 'client',   speaker_label: 'Клиент' };
+    if (r.speaker === 'client')   return { ...r, speaker: 'operator', speaker_label: 'Оператор' };
+    return r;
+  };
+
+  const ivrReplicas  = result.replicas.filter((r: Replica) => r.segment === 'ivr');
+  const liveReplicas = result.replicas
+    .filter((r: Replica) => r.segment === 'live' || !r.segment)
+    .map(applySwap);
   const hasIvr = result.has_ivr && ivrReplicas.length > 0;
+
+  // Пересчитываем счётчики с учётом свопа
+  const opCount = swapped ? result.client_replicas   : result.operator_replicas;
+  const clCount = swapped ? result.operator_replicas : result.client_replicas;
 
   const renderReplica = (r: Replica, i: number) => {
     const isOperator = r.speaker === 'operator';
@@ -45,19 +60,59 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
 
   return (
     <div className="space-y-4">
-      {/* Статистика */}
-      <div className="grid grid-cols-3 gap-3">
-        {[
-          { label: 'Реплик всего', val: result.replica_count },
-          { label: 'Оператор', val: result.operator_replicas },
-          { label: 'Клиент', val: result.client_replicas },
-        ].map((s, i) => (
-          <div key={i} className="p-3 rounded-xl text-center" style={{ background: 'var(--bg-elevated)' }}>
-            <div className="text-lg font-black font-mono" style={{ color: 'var(--brand-green)' }}>{s.val}</div>
-            <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.label}</div>
-          </div>
-        ))}
+      {/* Статистика + кнопка свопа */}
+      <div className="flex items-stretch gap-3">
+        <div className="grid grid-cols-3 gap-3 flex-1">
+          {[
+            { label: 'Реплик всего', val: result.replica_count },
+            { label: 'Оператор',     val: opCount },
+            { label: 'Клиент',       val: clCount },
+          ].map((s, i) => (
+            <div key={i} className="p-3 rounded-xl text-center" style={{ background: 'var(--bg-elevated)' }}>
+              <div className="text-lg font-black font-mono" style={{ color: 'var(--brand-green)' }}>{s.val}</div>
+              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{s.label}</div>
+            </div>
+          ))}
+        </div>
+
+        {/* Кнопка поменять местами */}
+        <button
+          onClick={() => setSwapped(v => !v)}
+          title="Поменять оператора и клиента местами"
+          className="flex flex-col items-center justify-center gap-1 px-3 rounded-xl text-xs font-medium transition-all hover:opacity-80"
+          style={{
+            background: swapped ? 'rgba(255,140,0,0.1)' : 'var(--bg-elevated)',
+            border: `1px solid ${swapped ? 'rgba(255,140,0,0.3)' : 'var(--border-default)'}`,
+            color: swapped ? '#ff8c00' : 'var(--text-muted)',
+            minWidth: 72,
+          }}>
+          <Icon name="ArrowLeftRight" size={16} style={{ color: swapped ? '#ff8c00' : 'var(--text-muted)' }} />
+          <span className="text-xs leading-tight text-center">
+            {swapped ? 'Своп\nвкл.' : 'Поменять\nролями'}
+          </span>
+        </button>
       </div>
+
+      {/* Баннер свопа */}
+      {swapped && (
+        <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl"
+          style={{ background: 'rgba(255,140,0,0.07)', border: '1px solid rgba(255,140,0,0.2)' }}>
+          <Icon name="ArrowLeftRight" size={14} style={{ color: '#ff8c00', flexShrink: 0 }} />
+          <div className="flex-1">
+            <p className="text-xs font-semibold" style={{ color: '#ff8c00' }}>
+              Роли поменяны местами (только для просмотра)
+            </p>
+            <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+              Оператор и клиент отображаются в обратном порядке. Исходные данные не изменены.
+            </p>
+          </div>
+          <button onClick={() => setSwapped(false)}
+            className="text-xs px-2 py-1 rounded-lg shrink-0"
+            style={{ background: 'rgba(255,140,0,0.15)', color: '#ff8c00' }}>
+            Сбросить
+          </button>
+        </div>
+      )}
 
       {/* Кнопка анализа */}
       {!result.analysis && result.status !== 'analyzing' && (
@@ -114,8 +169,6 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
                     {ivrReplicas.map((r: Replica, i: number) => renderReplica(r, i))}
                   </div>
                 )}
-
-                {/* Разделитель */}
                 <div className="flex items-center gap-2 my-3">
                   <div className="flex-1 h-px" style={{ background: 'var(--border-default)' }} />
                   <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1"
