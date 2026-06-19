@@ -55,7 +55,7 @@ export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone 
     });
   };
 
-  const DELETE_KEY = 'deleted_calls';
+  const DELETE_KEY = 'calls_hidden_ids';
   const loadDeleted = (): Set<string> => {
     try { return new Set(JSON.parse(localStorage.getItem(DELETE_KEY) || '[]')); } catch { return new Set(); }
   };
