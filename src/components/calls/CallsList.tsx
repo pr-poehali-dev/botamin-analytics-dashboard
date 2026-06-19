@@ -2,8 +2,12 @@ import { useState } from 'react';
 import { type CallRecord } from '@/lib/dataParser';
 import { type TranscriptResult } from '@/components/calls/transcriptionTypes';
 import Icon from '@/components/ui/icon';
+import { getAiStatus } from '@/components/calls/callStatus';
 
-type DoneMap = Record<string, { replica_count: number; operator_replicas: number; client_replicas: number }>;
+type DoneMap = Record<string, {
+  replica_count: number; operator_replicas: number; client_replicas: number;
+  ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
+}>;
 
 interface Props {
   calls: CallRecord[];
@@ -33,7 +37,9 @@ export default function CallsList({ calls, selectedCall, result, doneMap, onSele
       <div className="flex-1 overflow-y-auto space-y-1.5 pr-1">
         {filteredCalls.map((call, i) => {
           const isSelected  = selectedCall?.comm_id === call.comm_id;
-          const isDoneInDB  = !!doneMap[call.comm_id];
+          const doneEntry   = doneMap[call.comm_id];
+          const isDoneInDB  = !!doneEntry;
+          const aiStatus    = getAiStatus(doneEntry?.ai);
           const durMin      = Math.floor(call.duration_sec / 60);
           const durSec      = call.duration_sec % 60;
           const isLoading   = isSelected && (result?.status === 'transcribing' || result?.status === 'analyzing');
@@ -65,32 +71,30 @@ export default function CallsList({ calls, selectedCall, result, doneMap, onSele
                   </span>
                 </div>
               </div>
-              <div className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                ID: {call.comm_id || '—'}
+              <div className="flex items-center justify-between mt-0.5">
+                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  ID: {call.comm_id || '—'}
+                </span>
+                {/* AI-статус — виден всегда если есть */}
+                {aiStatus && !isLoading && (
+                  <span className="flex items-center gap-1 text-xs px-1.5 py-0.5 rounded-full"
+                    style={{ background: aiStatus.bg, color: aiStatus.color }}>
+                    <Icon name={aiStatus.icon} size={9} />
+                    {aiStatus.label}
+                  </span>
+                )}
+                {isLoading && (
+                  <span className="text-xs" style={{ color: 'var(--brand-green)' }}>
+                    {result?.status === 'analyzing' ? 'Анализирую…' : 'Транскрибирую…'}
+                  </span>
+                )}
+                {isError && (
+                  <span className="text-xs flex items-center gap-1" style={{ color: '#ff4444' }}>
+                    <Icon name="XCircle" size={10} />
+                    Ошибка
+                  </span>
+                )}
               </div>
-
-              {/* Статус только для выбранного */}
-              {isSelected && (
-                <div className="mt-1.5 flex items-center gap-1.5">
-                  {isLoading && (
-                    <span className="text-xs" style={{ color: 'var(--brand-green)' }}>
-                      {result?.status === 'analyzing' ? 'Анализирую…' : 'Транскрибирую…'}
-                    </span>
-                  )}
-                  {isDone && (
-                    <span className="text-xs flex items-center gap-1" style={{ color: 'var(--brand-green)' }}>
-                      <Icon name="CheckCircle" size={11} />
-                      {result?.cached ? 'Из кэша' : 'Готово'}
-                    </span>
-                  )}
-                  {isError && (
-                    <span className="text-xs flex items-center gap-1" style={{ color: '#ff4444' }}>
-                      <Icon name="XCircle" size={11} />
-                      {result?.error || 'Ошибка'}
-                    </span>
-                  )}
-                </div>
-              )}
             </div>
           );
         })}

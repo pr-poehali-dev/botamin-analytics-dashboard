@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { type CallRecord } from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
 import { TRANSCRIBE_URL, BATCH_STATUS_URL, type TranscriptResult, type Replica } from '@/components/calls/transcriptionTypes';
+import { getAiStatus } from '@/components/calls/callStatus';
 
 const PER_PAGE = 50;
 
@@ -12,7 +13,10 @@ const durColor = (sec: number) => {
   return 'var(--text-secondary)';
 };
 
-type DoneMap = Record<string, { replica_count: number; operator_replicas: number; client_replicas: number }>;
+type DoneMap = Record<string, {
+  replica_count: number; operator_replicas: number; client_replicas: number;
+  ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
+}>;
 
 function TranscriptModal({ call, onClose }: { call: CallRecord; onClose: () => void }) {
   const [result, setResult] = useState<TranscriptResult | null>(null);
@@ -288,6 +292,7 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
         {slice.map((c, i) => {
           const hasTr     = !!doneMap[c.comm_id];
           const isPending = inProgress.has(c.comm_id);
+          const aiStatus  = getAiStatus(doneMap[c.comm_id]?.ai);
           return (
             <div key={i}
               className="grid gap-2 px-4 py-2.5 text-xs border-b items-center group"
@@ -299,10 +304,18 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
               <div className="font-mono" style={{ color: 'var(--text-secondary)' }}>{c.date}</div>
               <div className="font-mono font-semibold" style={{ color: durColor(c.duration_sec) }}>{c.duration}</div>
               <div>
-                <span className="px-2 py-0.5 rounded-full text-xs"
-                  style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)' }}>
-                  {c.status}
-                </span>
+                {aiStatus ? (
+                  <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+                    style={{ background: aiStatus.bg, color: aiStatus.color }}>
+                    <Icon name={aiStatus.icon} size={10} />
+                    {aiStatus.label}
+                  </span>
+                ) : (
+                  <span className="px-2 py-0.5 rounded-full text-xs"
+                    style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+                    {c.status}
+                  </span>
+                )}
               </div>
               <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{c.comm_id || '—'}</div>
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.call_type}</div>
