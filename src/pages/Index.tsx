@@ -12,7 +12,8 @@ function getInitialScreen(): Screen {
   const site = loadSite();
   const data = loadCallsData();
   if (site && data) return 'dashboard';
-  if (site) return 'upload';
+  // Если сайт есть но данных нет — показываем login (с предзаполненным полем)
+  // чтобы пользователь не видел непонятный экран загрузки файла
   return 'login';
 }
 

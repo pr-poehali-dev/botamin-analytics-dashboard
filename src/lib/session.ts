@@ -50,6 +50,8 @@ export function loadCallsData(): object | null {
   if (!raw) return null;
   try {
     const data = JSON.parse(raw) as Record<string, unknown>;
+    // Проверяем что данные валидные (не пустой объект)
+    if (!data.total) return null;
     // Восстанавливаем calls (без record_url — транскрибация будет недоступна, но дашборд работает)
     try {
       const callsRaw = localStorage.getItem(CALLS_KEY);
