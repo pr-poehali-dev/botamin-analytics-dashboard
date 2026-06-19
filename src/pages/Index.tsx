@@ -17,9 +17,10 @@ function getInitialScreen(): Screen {
 }
 
 export default function Index() {
-  const [screen, setScreen] = useState<Screen>(getInitialScreen);
-  const [site, setSite] = useState<string>(loadSite);
-  const [data, setData] = useState<CallsData | null>(() => loadCallsData() as CallsData | null);
+  const [screen, setScreen]       = useState<Screen>(getInitialScreen);
+  const [site, setSite]           = useState<string>(loadSite);
+  const [data, setData]           = useState<CallsData | null>(() => loadCallsData() as CallsData | null);
+  const [autoStart, setAutoStart] = useState(false);
 
   const handleLogin = (domain: string) => {
     saveSite(domain);
@@ -27,10 +28,12 @@ export default function Index() {
     setScreen('upload');
   };
 
-  const handleLoad = (d: CallsData) => {
+  const handleLoad = (d: CallsData, auto?: boolean) => {
     saveCallsData(d);
     setData(d);
-    setScreen('transcribing');
+    setAutoStart(!!auto);
+    // При авто-режиме пропускаем TranscribingScreen и идём сразу на Dashboard
+    setScreen(auto ? 'dashboard' : 'transcribing');
   };
 
   const handleCancelUpload = () => {
@@ -66,7 +69,8 @@ export default function Index() {
     <Dashboard
       data={data!}
       site={site}
-      onReset={() => setScreen('upload')}
+      autoStart={autoStart}
+      onReset={() => { setAutoStart(false); setScreen('upload'); }}
       onLogout={handleLogout}
     />
   );

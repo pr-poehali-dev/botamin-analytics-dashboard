@@ -52,7 +52,7 @@ function KPI({ icon, label, value, sub, accent }: {
   );
 }
 
-export default function Dashboard({ data, site, onReset, onLogout }: { data: CallsData; site?: string; onReset: () => void; onLogout?: () => void }) {
+export default function Dashboard({ data, site, autoStart, onReset, onLogout }: { data: CallsData; site?: string; autoStart?: boolean; onReset: () => void; onLogout?: () => void }) {
   const [tab, setTab] = useState<Tab>('overview');
 
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
@@ -83,7 +83,7 @@ export default function Dashboard({ data, site, onReset, onLogout }: { data: Cal
                 <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--brand-green)' }} />
                 {data.total.toLocaleString('ru-RU')} звонков
               </div>
-              <AutoPilot calls={data.calls} />
+              <AutoPilot calls={data.calls} autoStart={autoStart} />
               <button onClick={onReset}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>

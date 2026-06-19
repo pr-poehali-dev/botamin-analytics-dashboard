@@ -11,22 +11,34 @@ type Phase = 'idle' | 'transcribing' | 'analyzing' | 'done';
 
 interface Props {
   calls: CallRecord[];
+  autoStart?: boolean;
 }
 
-export default function AutoPilot({ calls }: Props) {
+export default function AutoPilot({ calls, autoStart }: Props) {
   const [open, setOpen]         = useState(false);
   const [phase, setPhase]       = useState<Phase>('idle');
   const [total, setTotal]       = useState(0);
   const [done, setDone]         = useState(0);
   const [current, setCurrent]   = useState('');
   const [summary, setSummary]   = useState('');
-  const stopRef = useRef(false);
+  const stopRef   = useRef(false);
+  const didAuto   = useRef(false);
 
   const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-  // Считаем сколько ещё нужно обработать
   const [pendingTranscribe, setPendingTranscribe] = useState(0);
   const [pendingAnalyze, setPendingAnalyze]       = useState(0);
+
+  // Автозапуск при autoStart=true (после загрузки файла с включённым тогглом)
+  useEffect(() => {
+    if (autoStart && !didAuto.current && calls.length > 0) {
+      didAuto.current = true;
+      setOpen(true);
+      // Небольшая задержка чтобы модалка успела открыться
+      setTimeout(() => handleStart(), 300);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoStart, calls.length]);
 
   useEffect(() => {
     if (!open) return;
@@ -158,13 +170,17 @@ export default function AutoPilot({ calls }: Props) {
       <button
         onClick={() => setOpen(true)}
         className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:opacity-90"
-        style={{
+        style={isRunning ? {
           background: 'linear-gradient(135deg, var(--brand-green), #00ccaa)',
           color: '#000',
           boxShadow: '0 0 12px rgba(0,255,136,0.3)',
+        } : {
+          background: 'var(--bg-elevated)',
+          border: '1px solid var(--border-default)',
+          color: 'var(--text-secondary)',
         }}>
-        <Icon name="Zap" size={13} />
-        АВТО
+        <Icon name="Zap" size={13} style={{ color: isRunning ? '#000' : 'var(--brand-green)' }} />
+        {isRunning ? `АВТО ${done}/${total}` : 'АВТО'}
       </button>
 
       {/* Модалка */}

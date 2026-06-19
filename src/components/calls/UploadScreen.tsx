@@ -5,29 +5,40 @@ import Icon from '@/components/ui/icon';
 const DEMO_URL =
   'https://cdn.poehali.dev/projects/6a84af2c-c107-4039-b71a-e57da70119f0/bucket/f46cc9cf-190b-4379-8e94-6225cc11ec61.xlsx';
 
+const AUTO_KEY = 'autopilot_on_load';
+
 interface Props {
-  onLoad: (d: CallsData) => void;
+  onLoad: (d: CallsData, autoStart?: boolean) => void;
   onCancel?: () => void;
 }
 
 export default function UploadScreen({ onLoad, onCancel }: Props) {
   const [loading, setLoading] = useState(false);
-  const [error, setError] = useState('');
-  const [drag, setDrag] = useState(false);
+  const [error, setError]     = useState('');
+  const [drag, setDrag]       = useState(false);
+  const [autoOn, setAutoOn]   = useState(() => {
+    try { return localStorage.getItem(AUTO_KEY) === 'true'; } catch { return false; }
+  });
   const inputRef = useRef<HTMLInputElement>(null);
+
+  const toggleAuto = () => {
+    const next = !autoOn;
+    setAutoOn(next);
+    try { localStorage.setItem(AUTO_KEY, String(next)); } catch { /* ignore */ }
+  };
 
   const process = useCallback(async (file?: File, url?: string) => {
     setLoading(true);
     setError('');
     try {
       const data = file ? await loadFromFile(file) : await loadFromUrl(url!);
-      onLoad(data);
+      onLoad(data, autoOn);
     } catch (e) {
       setError(e instanceof Error ? e.message : 'Неизвестная ошибка');
     } finally {
       setLoading(false);
     }
-  }, [onLoad]);
+  }, [onLoad, autoOn]);
 
   const onFile = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files?.[0]) process(e.target.files[0]);
@@ -41,7 +52,6 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
     <div className="min-h-screen flex flex-col items-center justify-center px-4"
       style={{ background: 'var(--bg-primary)' }}>
 
-      {/* зона загрузки */}
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
@@ -57,6 +67,7 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
           )}
         </div>
 
+        {/* Зона загрузки */}
         <div
           className="w-full rounded-2xl p-8 text-center cursor-pointer transition-all"
           style={{
@@ -76,7 +87,9 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
                     style={{ background: 'var(--brand-green)', animationDelay: `${i * 0.2}s` }} />
                 ))}
               </div>
-              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>Анализирую звонки…</p>
+              <p className="text-sm" style={{ color: 'var(--text-muted)' }}>
+                {autoOn ? 'Загружаю… после запущу авто-режим' : 'Анализирую звонки…'}
+              </p>
             </div>
           ) : (
             <>
@@ -97,6 +110,41 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
           )}
         </div>
 
+        {/* Тоггл Авто-режим */}
+        {!loading && (
+          <div
+            className="mt-4 flex items-center justify-between px-4 py-3 rounded-xl cursor-pointer transition-all"
+            style={{
+              background: autoOn ? 'rgba(0,255,136,0.08)' : 'var(--bg-card)',
+              border: `1px solid ${autoOn ? 'rgba(0,255,136,0.25)' : 'var(--border-default)'}`,
+            }}
+            onClick={e => { e.stopPropagation(); toggleAuto(); }}>
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center"
+                style={{ background: autoOn ? 'rgba(0,255,136,0.15)' : 'var(--bg-elevated)' }}>
+                <Icon name="Zap" size={15} style={{ color: autoOn ? 'var(--brand-green)' : 'var(--text-muted)' }} />
+              </div>
+              <div>
+                <p className="text-xs font-semibold" style={{ color: autoOn ? 'var(--brand-green)' : 'var(--text-primary)' }}>
+                  Авто-режим после загрузки
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  {autoOn ? 'Транскрибация + ИИ-анализ запустятся автоматически' : 'Включить транскрибацию и анализ сразу'}
+                </p>
+              </div>
+            </div>
+            {/* Переключатель */}
+            <div className="relative shrink-0 w-10 h-6 rounded-full transition-all"
+              style={{ background: autoOn ? 'var(--brand-green)' : 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+              <div className="absolute top-0.5 w-5 h-5 rounded-full shadow transition-all"
+                style={{
+                  background: autoOn ? '#000' : 'var(--text-muted)',
+                  left: autoOn ? '18px' : '2px',
+                }} />
+            </div>
+          </div>
+        )}
+
         {error && (
           <p className="mt-4 text-sm px-4 py-2 rounded-lg"
             style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666' }}>{error}</p>
@@ -104,7 +152,7 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
 
         {!loading && (
           <button
-            className="mt-5 w-full text-xs underline underline-offset-2 transition-opacity hover:opacity-70"
+            className="mt-4 w-full text-xs underline underline-offset-2 transition-opacity hover:opacity-70"
             style={{ color: 'var(--text-muted)' }}
             onClick={() => process(undefined, DEMO_URL)}>
             Открыть демо (3 263 звонка, апрель–июнь 2026)
