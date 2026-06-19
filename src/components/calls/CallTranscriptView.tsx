@@ -72,7 +72,7 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
                   <div className="px-3 py-2 rounded-xl text-xs leading-relaxed"
                     style={{
                       background: r.speaker === 'operator' ? 'var(--bg-elevated)' : 'rgba(0,170,255,0.1)',
-                      color: 'var(--text-secondary)',
+                      color: 'var(--text-primary)',
                     }}>
                     {r.text}
                   </div>
