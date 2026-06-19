@@ -1,5 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { loadFromUrl, loadFromFile, type CallsData } from '@/lib/dataParser';
+import { loadSite } from '@/lib/session';
 import Icon from '@/components/ui/icon';
 
 const DEMO_URL =
@@ -19,7 +20,8 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
   const [autoOn, setAutoOn]   = useState(() => {
     try { return localStorage.getItem(AUTO_KEY) === 'true'; } catch { return false; }
   });
-  const inputRef = useRef<HTMLInputElement>(null);
+  const inputRef  = useRef<HTMLInputElement>(null);
+  const savedSite = loadSite();
 
   const toggleAuto = () => {
     const next = !autoOn;
@@ -55,7 +57,7 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
       <div className="w-full max-w-md">
         <div className="flex items-center justify-between mb-5">
           <h2 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-            Новый анализ
+            {savedSite ? 'Загрузить новый отчёт' : 'Новый анализ'}
           </h2>
           {onCancel && (
             <button onClick={onCancel}
@@ -66,6 +68,25 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
             </button>
           )}
         </div>
+
+        {/* Баннер "Мы вас помним" */}
+        {savedSite && !loading && (
+          <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)' }}>
+            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+              style={{ background: 'rgba(0,255,136,0.12)' }}>
+              <Icon name="Globe" size={15} style={{ color: 'var(--brand-green)' }} />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-xs font-semibold truncate" style={{ color: 'var(--brand-green)' }}>
+                {savedSite}
+              </p>
+              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                Загрузите свежий Excel-файл чтобы обновить данные
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* Зона загрузки */}
         <div
