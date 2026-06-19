@@ -159,28 +159,44 @@ def parse_transcript(op: dict) -> dict:
     replicas.sort(key=lambda r: r['start_time'])
 
     # Определяем IVR/автоответчик по тексту (независимо от спикера)
-    # IVR = фразы в начале записи с типичными ключевыми словами автоответчика
     ivr_keywords = [
         'нажмите', 'добро пожаловать', 'наберите', 'соединяем', 'оставайтесь',
         'записываются', 'внутренний номер', 'пресс', 'press',
         'вы позвонили', 'ваш звонок', 'для связи с', 'для соединения',
         'дождитесь ответа', 'на линии', 'контроля качества',
+        'мы не получили', 'введите добавочный', 'ответа секретаря',
+        'турбинный завод', 'турбиный завод',
     ]
-    ivr_end_idx = None
+    # Короткие приветствия в начале тоже могут быть IVR (перед блоком нажмите)
+    ivr_greeting = ['здравствуйте', 'добрый день', 'добро пожаловать', 'алло']
+
+    def is_ivr_text(text: str) -> bool:
+        t = text.lower()
+        return any(kw in t for kw in ivr_keywords)
+
+    # Помечаем IVR: сканируем с начала, пока идут IVR-фразы (или короткие приветствия перед ними)
+    ivr_end_idx = 0
+    found_ivr_keyword = False
     for idx, r in enumerate(replicas):
         text_lower = r['text'].lower()
-        is_ivr = any(kw in text_lower for kw in ivr_keywords)
-        if is_ivr:
-            # Эта реплика — IVR, продолжаем
+        if is_ivr_text(r['text']):
+            found_ivr_keyword = True
             ivr_end_idx = idx + 1
-        elif ivr_end_idx is not None:
-            # Первая не-IVR реплика после блока IVR — стоп
+        elif found_ivr_keyword:
+            # После блока IVR-фраз — стоп
             break
-        # Если ещё не было IVR и это не IVR — прерываем только после 1-й реплики
-        elif idx == 0:
+        elif any(g in text_lower for g in ivr_greeting) and len(r['text']) < 30:
+            # Короткое приветствие до первого IVR-ключевого слова — пропускаем (может быть IVR)
+            ivr_end_idx = idx + 1
+        else:
+            # Не IVR и нет ключевых слов — живой разговор начался
             break
 
-    has_ivr = ivr_end_idx is not None and ivr_end_idx > 0
+    # Если нашли IVR-ключевые слова, помечаем блок в начале как IVR
+    has_ivr = found_ivr_keyword and ivr_end_idx > 0
+
+    # Если весь звонок — только IVR без живого разговора
+    all_ivr = has_ivr and ivr_end_idx == len(replicas)
 
     for idx, r in enumerate(replicas):
         if has_ivr and idx < ivr_end_idx:
@@ -198,6 +214,7 @@ def parse_transcript(op: dict) -> dict:
         'operator_replicas': sum(1 for r in live if r['speaker'] == 'operator'),
         'client_replicas':   sum(1 for r in live if r['speaker'] == 'client'),
         'has_ivr':           has_ivr,
+        'all_ivr':           all_ivr,
         'ivr_end_idx':       ivr_end_idx,
     }
 
