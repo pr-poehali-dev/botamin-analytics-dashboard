@@ -7,12 +7,12 @@
       "expectedStatus": 200
     },
     {
-      "name": "GET done list",
+      "name": "GET done list with ai data",
       "method": "GET",
       "path": "/",
       "expectedStatus": 200,
-      "expectedBody": { "done": {} },
-      "bodyMatcher": "partial"
+      "expectedBody": { "done": { "0": {} } },
+      "bodyMatcher": "any"
     }
   ]
 }

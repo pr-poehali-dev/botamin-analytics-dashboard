@@ -20,7 +20,10 @@ const IGNORE_REASONS = [
 
 type IgnoreMap = Record<string, string>; // comm_id → reason_id
 
-type DoneMap = Record<string, { replica_count: number; operator_replicas: number; client_replicas: number }>;
+type DoneMap = Record<string, {
+  replica_count: number; operator_replicas: number; client_replicas: number;
+  ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
+}>;
 
 export default function TranscriptionTab({ calls, initialCommId }: { calls: CallRecord[]; initialCommId?: string }) {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
@@ -221,6 +224,19 @@ export default function TranscriptionTab({ calls, initialCommId }: { calls: Call
       });
       const analysis = await res.json();
       setResult(prev => prev ? { ...prev, status: 'done', cached: prev.cached, analysis } : null);
+      // Сохраняем ai-данные в doneMap чтобы статус отображался в списке
+      setDoneMap(prev => ({
+        ...prev,
+        [selectedCall.comm_id]: {
+          ...(prev[selectedCall.comm_id] || { replica_count: 0, operator_replicas: 0, client_replicas: 0 }),
+          ai: {
+            outcome:         analysis.outcome,
+            call_type:       analysis.call_type,
+            qualification:   analysis.qualification,
+            client_interest: analysis.client_interest,
+          },
+        },
+      }));
     } catch {
       setResult(prev => prev ? { ...prev, status: 'done' } : null);
     }
