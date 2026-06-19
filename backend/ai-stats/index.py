@@ -31,11 +31,11 @@ def handler(event: dict, context) -> dict:
 
     # Все анализы
     cur.execute(f"""
-        SELECT a.call_type, a.qualification, a.client_interest, a.outcome,
+        SELECT a.comm_id, a.call_type, a.qualification, a.client_interest, a.outcome,
                a.fail_reason, a.success_factor, a.operator_score,
                a.operator_followed_script, a.operator_handled_objections,
                a.key_phrases_client, a.key_phrases_operator,
-               t.duration_sec, t.date
+               t.duration_sec, t.date, a.summary
         FROM {SCHEMA}.call_analyses a
         LEFT JOIN {SCHEMA}.call_transcripts t ON a.comm_id = t.comm_id
         ORDER BY t.date DESC
@@ -65,10 +65,17 @@ def handler(event: dict, context) -> dict:
     all_phrases_client = Counter()
     all_phrases_operator = Counter()
     by_date = Counter()
+    # Для динамики качества по дням
+    by_date_scores  = {}   # date -> [scores]
+    by_date_targets = {}   # date -> [is_target]
+
+    # Лучшие и худшие звонки
+    best_calls  = []
+    worst_calls = []
 
     for row in rows:
-        call_type, qualification, interest, outcome, fail_reason, success_factor, \
-        score, script, objections, phrases_client, phrases_operator, dur_sec, date = row
+        comm_id, call_type, qualification, interest, outcome, fail_reason, success_factor, \
+        score, script, objections, phrases_client, phrases_operator, dur_sec, date, summary = row
 
         call_types[call_type or 'unknown'] += 1
         qualifications['qualified' if qualification else 'not_qualified'] += 1
@@ -81,6 +88,12 @@ def handler(event: dict, context) -> dict:
             success_factors.append(success_factor)
         if score:
             scores.append(score)
+            call_info = {'comm_id': comm_id, 'score': score, 'date': str(date) if date else '',
+                         'summary': summary or '', 'outcome': outcome or ''}
+            if score >= 8:
+                best_calls.append(call_info)
+            elif score <= 4:
+                worst_calls.append(call_info)
         if script:
             followed_script += 1
         if objections:
@@ -95,7 +108,11 @@ def handler(event: dict, context) -> dict:
                 all_phrases_operator[ph] += 1
 
         if date:
-            by_date[str(date)] += 1
+            d = str(date)
+            by_date[d] += 1
+            if score:
+                by_date_scores.setdefault(d, []).append(score)
+            by_date_targets.setdefault(d, []).append(1 if call_type == 'target' else 0)
 
     # KPI
     target_count = call_types.get('target', 0)
@@ -122,6 +139,24 @@ def handler(event: dict, context) -> dict:
 
     # Динамика по датам
     by_date_list = [{'date': d, 'count': c} for d, c in sorted(by_date.items())]
+
+    # Динамика качества по дням
+    quality_by_date = []
+    for d in sorted(by_date_scores.keys()):
+        day_scores  = by_date_scores[d]
+        day_targets = by_date_targets.get(d, [])
+        quality_by_date.append({
+            'date':        d,
+            'avg_score':   round(sum(day_scores) / len(day_scores), 1) if day_scores else 0,
+            'target_rate': round(sum(day_targets) / len(day_targets) * 100, 1) if day_targets else 0,
+            'count':       by_date[d],
+        })
+
+    # Топ-5 лучших и худших
+    best_calls.sort(key=lambda x: -x['score'])
+    worst_calls.sort(key=lambda x: x['score'])
+    top_best  = best_calls[:5]
+    top_worst = worst_calls[:5]
 
     # Распределение оценок операторов
     score_dist = Counter(scores)
@@ -156,6 +191,11 @@ def handler(event: dict, context) -> dict:
 
         # Динамика
         'by_date': by_date_list,
+        'quality_by_date': quality_by_date,
+
+        # Лучшие и худшие
+        'top_best_calls':  top_best,
+        'top_worst_calls': top_worst,
     }
 
     return {

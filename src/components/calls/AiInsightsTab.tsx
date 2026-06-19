@@ -30,6 +30,9 @@ interface AiStats {
   top_phrases_client: { phrase: string; count: number }[];
   top_phrases_operator: { phrase: string; count: number }[];
   by_date: { date: string; count: number }[];
+  quality_by_date: { date: string; avg_score: number; target_rate: number; count: number }[];
+  top_best_calls: { comm_id: string; score: number; date: string; summary: string; outcome: string }[];
+  top_worst_calls: { comm_id: string; score: number; date: string; summary: string; outcome: string }[];
 }
 
 interface TipProps { active?: boolean; payload?: { name: string; value: number }[]; label?: string }
@@ -387,61 +390,168 @@ export default function AiInsightsTab() {
         </div>
       )}
 
-      {/* Топ причин отказов */}
-      {stats.top_fail_reasons.length > 0 && (
-        <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-              style={{ background: 'rgba(255,68,68,0.12)' }}>
-              <Icon name="XCircle" size={14} style={{ color: '#ff4444' }} />
-            </div>
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Топ причин отказов
-            </h3>
-          </div>
-          <div className="space-y-3">
-            {stats.top_fail_reasons.map((f, i) => (
-              <div key={i} className="flex items-start gap-3">
-                <span className="text-xs font-black font-mono w-5 shrink-0 mt-0.5"
-                  style={{ color: '#ff4444' }}>#{i + 1}</span>
-                <div className="flex-1">
-                  <div className="flex items-center gap-2 mb-1">
-                    <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
-                      <div className="h-full rounded-full" style={{ width: `${(f.count / maxFail) * 100}%`, background: '#ff4444' }} />
-                    </div>
-                    <span className="text-xs font-mono shrink-0" style={{ color: '#ff6666' }}>{f.count}×</span>
-                  </div>
-                  <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{f.reason}</p>
-                </div>
+      {/* Топ причин отказов + факторов успеха — бок о бок */}
+      <div className="grid sm:grid-cols-2 gap-4">
+
+        {/* Топ причин отказов */}
+        {stats.top_fail_reasons.length > 0 && (
+          <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+            <div className="flex items-center gap-2 mb-5">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                style={{ background: 'rgba(255,68,68,0.12)' }}>
+                <Icon name="XCircle" size={14} style={{ color: '#ff4444' }} />
               </div>
-            ))}
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Топ причин отказов</h3>
+            </div>
+            <div className="space-y-3">
+              {stats.top_fail_reasons.map((f, i) => (
+                <div key={i} className="flex items-start gap-3">
+                  <span className="text-xs font-black font-mono w-5 shrink-0 mt-0.5" style={{ color: '#ff4444' }}>#{i+1}</span>
+                  <div className="flex-1">
+                    <div className="flex items-center gap-2 mb-1">
+                      <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="h-full rounded-full" style={{ width: `${(f.count / maxFail) * 100}%`, background: '#ff4444' }} />
+                      </div>
+                      <span className="text-xs font-mono shrink-0" style={{ color: '#ff6666' }}>{f.count}×</span>
+                    </div>
+                    <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{f.reason}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
+        {/* Топ факторов успеха */}
+        {stats.top_success_factors.length > 0 ? (
+          <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+            <div className="flex items-center gap-2 mb-5">
+              <div className="w-7 h-7 rounded-lg flex items-center justify-center"
+                style={{ background: 'rgba(0,255,136,0.12)' }}>
+                <Icon name="CheckCircle" size={14} style={{ color: 'var(--brand-green)' }} />
+              </div>
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Факторы успеха</h3>
+            </div>
+            <div className="space-y-2.5">
+              {stats.top_success_factors.map((f, i) => {
+                const maxS = Math.max(...stats.top_success_factors.map(x => x.count), 1);
+                return (
+                  <div key={i} className="flex items-start gap-3">
+                    <span className="text-xs font-black font-mono w-5 shrink-0 mt-0.5" style={{ color: 'var(--brand-green)' }}>#{i+1}</span>
+                    <div className="flex-1">
+                      <div className="flex items-center gap-2 mb-1">
+                        <div className="flex-1 h-1.5 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
+                          <div className="h-full rounded-full" style={{ width: `${(f.count / maxS) * 100}%`, background: 'var(--brand-green)' }} />
+                        </div>
+                        <span className="text-xs font-mono shrink-0" style={{ color: 'var(--brand-green)' }}>{f.count}×</span>
+                      </div>
+                      <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{f.factor}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-2xl p-6 flex flex-col items-center justify-center gap-2"
+            style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+            <Icon name="Trophy" size={24} style={{ color: 'var(--text-muted)', opacity: 0.4 }} />
+            <p className="text-xs text-center" style={{ color: 'var(--text-muted)' }}>
+              Факторы успеха появятся<br/>после успешных звонков
+            </p>
+          </div>
+        )}
+      </div>
+
+      {/* Динамика качества по дням */}
+      {stats.quality_by_date && stats.quality_by_date.length > 1 && (
+        <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+          <h3 className="text-sm font-semibold mb-1" style={{ color: 'var(--text-primary)' }}>Динамика качества по дням</h3>
+          <p className="text-xs mb-4" style={{ color: 'var(--text-muted)' }}>Средняя оценка оператора и % целевых звонков</p>
+          <ResponsiveContainer width="100%" height={180}>
+            <BarChart data={stats.quality_by_date} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+              <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} />
+              <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false} domain={[0, 10]} />
+              <Tooltip content={({ active, payload, label }) => {
+                if (!active || !payload?.length) return null;
+                return (
+                  <div className="px-3 py-2 rounded-lg text-xs border"
+                    style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                    <div className="font-semibold mb-1">{label}</div>
+                    <div style={{ color: 'var(--brand-green)' }}>Оценка: {payload[0]?.value}</div>
+                    <div style={{ color: '#00aaff' }}>Целевых: {payload[1]?.value}%</div>
+                  </div>
+                );
+              }} cursor={false} />
+              <Bar dataKey="avg_score" name="Оценка" radius={[3,3,0,0]} fill="rgba(0,255,136,0.7)" />
+              <Bar dataKey="target_rate" name="% целевых" radius={[3,3,0,0]} fill="rgba(0,170,255,0.5)" />
+            </BarChart>
+          </ResponsiveContainer>
+          <div className="flex gap-4 mt-2 justify-end">
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ background: 'rgba(0,255,136,0.7)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Оценка /10</span>
+            </div>
+            <div className="flex items-center gap-1.5">
+              <div className="w-2.5 h-2.5 rounded-sm" style={{ background: 'rgba(0,170,255,0.5)' }} />
+              <span className="text-xs" style={{ color: 'var(--text-muted)' }}>% целевых</span>
+            </div>
           </div>
         </div>
       )}
 
-      {/* Топ факторов успеха */}
-      {stats.top_success_factors.length > 0 && (
-        <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
-          <div className="flex items-center gap-2 mb-5">
-            <div className="w-7 h-7 rounded-lg flex items-center justify-center"
-              style={{ background: 'rgba(0,255,136,0.12)' }}>
-              <Icon name="CheckCircle" size={14} style={{ color: 'var(--brand-green)' }} />
+      {/* Лучшие и худшие звонки */}
+      {((stats.top_best_calls?.length > 0) || (stats.top_worst_calls?.length > 0)) && (
+        <div className="grid sm:grid-cols-2 gap-4">
+
+          {/* Лучшие */}
+          <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <Icon name="Trophy" size={14} style={{ color: 'var(--brand-green)' }} />
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Лучшие звонки</h3>
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)' }}>оценка 8–10</span>
             </div>
-            <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-              Что приводит к успеху
-            </h3>
-          </div>
-          <div className="space-y-2">
-            {stats.top_success_factors.map((f, i) => (
-              <div key={i} className="flex items-start gap-3 p-3 rounded-xl"
-                style={{ background: 'rgba(0,255,136,0.05)' }}>
-                <Icon name="Sparkles" size={13} style={{ color: 'var(--brand-green)', marginTop: 1, flexShrink: 0 }} />
-                <p className="text-xs leading-relaxed" style={{ color: 'var(--text-secondary)' }}>{f.factor}</p>
-                {f.count > 1 && (
-                  <span className="text-xs font-mono shrink-0" style={{ color: 'var(--brand-green)' }}>{f.count}×</span>
-                )}
+            {stats.top_best_calls?.length > 0 ? (
+              <div className="space-y-2">
+                {stats.top_best_calls.map((c, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-xl"
+                    style={{ background: 'rgba(0,255,136,0.05)', border: '1px solid rgba(0,255,136,0.1)' }}>
+                    <span className="text-sm font-black font-mono shrink-0" style={{ color: 'var(--brand-green)' }}>{c.score}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-mono mb-0.5" style={{ color: 'var(--text-muted)' }}>{c.date} · ID {c.comm_id}</p>
+                      <p className="text-xs leading-relaxed truncate" style={{ color: 'var(--text-secondary)' }}>{c.summary || '—'}</p>
+                    </div>
+                  </div>
+                ))}
               </div>
-            ))}
+            ) : (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>Пока нет звонков с оценкой 8+</p>
+            )}
+          </div>
+
+          {/* Худшие */}
+          <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+            <div className="flex items-center gap-2 mb-4">
+              <Icon name="AlertTriangle" size={14} style={{ color: '#ff4444' }} />
+              <h3 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>Требуют внимания</h3>
+              <span className="text-xs px-1.5 py-0.5 rounded" style={{ background: 'rgba(255,68,68,0.1)', color: '#ff4444' }}>оценка 1–4</span>
+            </div>
+            {stats.top_worst_calls?.length > 0 ? (
+              <div className="space-y-2">
+                {stats.top_worst_calls.map((c, i) => (
+                  <div key={i} className="flex items-start gap-3 p-3 rounded-xl"
+                    style={{ background: 'rgba(255,68,68,0.05)', border: '1px solid rgba(255,68,68,0.1)' }}>
+                    <span className="text-sm font-black font-mono shrink-0" style={{ color: '#ff4444' }}>{c.score}</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-xs font-mono mb-0.5" style={{ color: 'var(--text-muted)' }}>{c.date} · ID {c.comm_id}</p>
+                      <p className="text-xs leading-relaxed truncate" style={{ color: 'var(--text-secondary)' }}>{c.summary || '—'}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs py-6 text-center" style={{ color: 'var(--text-muted)' }}>Нет звонков с низкой оценкой</p>
+            )}
           </div>
         </div>
       )}
