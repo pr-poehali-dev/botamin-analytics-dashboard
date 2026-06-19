@@ -1,11 +1,13 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
   PieChart, Pie, Legend,
 } from 'recharts';
 
-const AI_STATS_URL = 'https://functions.poehali.dev/db240be1-ed61-46d9-bcbf-59bbc6130fea';
+const AI_STATS_URL    = 'https://functions.poehali.dev/db240be1-ed61-46d9-bcbf-59bbc6130fea';
+const BATCH_ANALYZE_URL = 'https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018';
+const ANALYZE_URL     = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
 
 interface AiStats {
   total: number;
@@ -73,22 +75,73 @@ function ScoreBar({ score, count, max }: { score: number; count: number; max: nu
 }
 
 export default function AiInsightsTab() {
-  const [stats, setStats] = useState<AiStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState('');
+  const [stats, setStats]         = useState<AiStats | null>(null);
+  const [loading, setLoading]     = useState(true);
+  const [error, setError]         = useState('');
+
+  // Батч-анализ
+  const [batchRunning, setBatchRunning] = useState(false);
+  const [batchTotal, setBatchTotal]     = useState(0);
+  const [batchDone, setBatchDone]       = useState(0);
+  const [batchCurrent, setBatchCurrent] = useState('');
+  const [pendingCount, setPendingCount] = useState(0);
+  const stopRef = useRef(false);
+
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
   const load = async () => {
     setLoading(true);
     setError('');
     try {
-      const res = await fetch(AI_STATS_URL);
-      const data = await res.json();
+      const [statsRes, pendingRes] = await Promise.all([
+        fetch(AI_STATS_URL),
+        fetch(BATCH_ANALYZE_URL),
+      ]);
+      const data    = await statsRes.json();
+      const pending = await pendingRes.json();
       setStats(data);
+      setPendingCount(pending.count || 0);
     } catch {
       setError('Не удалось загрузить данные');
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleBatchAnalyze = async () => {
+    const res     = await fetch(BATCH_ANALYZE_URL);
+    const data    = await res.json();
+    const pending = data.pending || [];
+    if (!pending.length) return;
+
+    stopRef.current = false;
+    setBatchRunning(true);
+    setBatchTotal(pending.length);
+    setBatchDone(0);
+
+    for (let i = 0; i < pending.length; i++) {
+      if (stopRef.current) break;
+      const item = pending[i];
+      setBatchCurrent(item.comm_id);
+      try {
+        await fetch(ANALYZE_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            transcript:   item.full_text,
+            comm_id:      item.comm_id,
+            duration_sec: item.duration_sec,
+          }),
+        });
+      } catch { /* продолжаем */ }
+      setBatchDone(i + 1);
+      if (i < pending.length - 1) await sleep(1500);
+    }
+
+    setBatchRunning(false);
+    setBatchCurrent('');
+    setPendingCount(0);
+    load();
   };
 
   useEffect(() => { load(); }, []);
@@ -132,10 +185,32 @@ export default function AiInsightsTab() {
             Пока нет проанализированных звонков
           </p>
           <p className="text-xs max-w-sm" style={{ color: 'var(--text-muted)' }}>
-            Перейдите во вкладку «Транскрибация», выберите звонок, дождитесь транскрипта
-            и нажмите «Анализировать через ИИ». После этого данные появятся здесь.
+            {pendingCount > 0
+              ? `${pendingCount} звонков транскрибированы и готовы к анализу`
+              : 'Сначала транскрибируйте звонки во вкладке «Транскрибация»'}
           </p>
         </div>
+        {pendingCount > 0 && !batchRunning && (
+          <button onClick={handleBatchAnalyze}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-semibold transition-all hover:opacity-90"
+            style={{ background: 'var(--brand-green)', color: '#000' }}>
+            <Icon name="Sparkles" size={15} />
+            Анализировать все ({pendingCount})
+          </button>
+        )}
+        {batchRunning && (
+          <div className="flex flex-col items-center gap-2">
+            <div className="flex gap-1.5">
+              {[0,1,2].map(i => (
+                <div key={i} className="w-2.5 h-2.5 rounded-full animate-pulse"
+                  style={{ background: 'var(--brand-green)', animationDelay: `${i*0.2}s` }} />
+              ))}
+            </div>
+            <p className="text-xs" style={{ color: 'var(--brand-green)' }}>
+              Анализирую {batchDone}/{batchTotal}…
+            </p>
+          </div>
+        )}
       </div>
     );
   }
@@ -161,20 +236,54 @@ export default function AiInsightsTab() {
     <div className="space-y-6 animate-fade-in">
 
       {/* Заголовок */}
-      <div className="flex items-center justify-between">
+      <div className="flex items-center justify-between gap-4 flex-wrap">
         <div>
           <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
             Аналитика ИИ
           </h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
             На основе {stats.total} проанализированных звонков
+            {pendingCount > 0 && (
+              <span style={{ color: '#ff8c00' }}> · {pendingCount} ожидают анализа</span>
+            )}
           </p>
         </div>
-        <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
-          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
-          <Icon name="RefreshCw" size={12} />
-          Обновить
-        </button>
+        <div className="flex items-center gap-2">
+          {/* Батч-анализ */}
+          {!batchRunning ? (
+            pendingCount > 0 && (
+              <button onClick={handleBatchAnalyze}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:opacity-90"
+                style={{ background: 'var(--brand-green)', color: '#000' }}>
+                <Icon name="Sparkles" size={13} />
+                Анализировать все ({pendingCount})
+              </button>
+            )
+          ) : (
+            <div className="flex items-center gap-3 px-4 py-2 rounded-lg"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)' }}>
+              <div className="flex gap-1">
+                {[0,1,2].map(i => (
+                  <div key={i} className="w-1.5 h-1.5 rounded-full animate-pulse"
+                    style={{ background: 'var(--brand-green)', animationDelay: `${i*0.15}s` }} />
+                ))}
+              </div>
+              <span className="text-xs" style={{ color: 'var(--brand-green)' }}>
+                {batchDone}/{batchTotal} · {batchCurrent}
+              </span>
+              <button onClick={() => { stopRef.current = true; }}
+                className="text-xs px-2 py-0.5 rounded"
+                style={{ background: 'rgba(255,68,68,0.1)', color: '#ff4444' }}>
+                Стоп
+              </button>
+            </div>
+          )}
+          <button onClick={load} className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
+            <Icon name="RefreshCw" size={12} />
+            Обновить
+          </button>
+        </div>
       </div>
 
       {/* KPI */}
