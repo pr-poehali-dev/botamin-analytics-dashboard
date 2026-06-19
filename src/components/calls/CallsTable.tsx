@@ -155,7 +155,7 @@ function TranscriptModal({ call, onClose }: { call: CallRecord; onClose: () => v
   );
 }
 
-export default function CallsTable({ calls }: { calls: CallRecord[] }) {
+export default function CallsTable({ calls, onGoToTranscription }: { calls: CallRecord[]; onGoToTranscription?: (commId: string) => void }) {
   const [search, setSearch]   = useState('');
   const [minSec, setMinSec]   = useState('');
   const [maxSec, setMaxSec]   = useState('');
@@ -168,6 +168,8 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
   const [doneMap, setDoneMap]     = useState<DoneMap>(loadLocal);
   const [modalCall, setModalCall] = useState<CallRecord | null>(null);
   const [inProgress, setInProgress] = useState<Set<string>>(new Set());
+
+  const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
   const transcribeCall = async (call: CallRecord) => {
     if (!call.record_url || inProgress.has(call.comm_id) || doneMap[call.comm_id]) return;
@@ -185,17 +187,19 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
         }),
       });
       const data = await res.json();
-      const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
       let result = data;
+      // Поллим до 36 раз × 5 сек = 3 минуты
       if (data.status === 'processing') {
-        for (let i = 0; i < 15; i++) {
+        for (let i = 0; i < 36; i++) {
           await sleep(5000);
           const poll = await fetch(`${TRANSCRIBE_URL}?comm_id=${call.comm_id}`);
           result = await poll.json();
-          if (result.status === 'done') break;
+          if (result.status === 'done' || result.replica_count > 0) break;
+          if (result.error) break;
         }
       }
-      if (result.replica_count > 0 || result.all_ivr) {
+      // Добавляем в doneMap если есть реплики, IVR, или хоть что-то вернулось
+      if (result.replica_count > 0 || result.all_ivr || result.status === 'done') {
         setDoneMap(prev => {
           const next = { ...prev, [call.comm_id]: { replica_count: result.replica_count || 0, operator_replicas: result.operator_replicas || 0, client_replicas: result.client_replicas || 0 } };
           try { localStorage.setItem(LS_KEY, JSON.stringify(next)); } catch (_e) { /* ignore */ }
@@ -203,6 +207,7 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
         });
       }
     } catch { /* ignore */ }
+    // Всегда убираем из inProgress чтобы кнопка не зависала
     setInProgress(prev => { const n = new Set(prev); n.delete(call.comm_id); return n; });
   };
 
@@ -295,7 +300,8 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
           const aiStatus  = getAiStatus(doneMap[c.comm_id]?.ai);
           return (
             <div key={i}
-              className="grid gap-2 px-4 py-2.5 text-xs border-b items-center group"
+              className="grid gap-2 px-4 py-2.5 text-xs border-b items-center group cursor-pointer transition-all hover:bg-white/5"
+              onClick={() => onGoToTranscription?.(c.comm_id)}
               style={{
                 gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr 32px',
                 borderColor: 'var(--border-subtle)',
@@ -319,7 +325,7 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
               </div>
               <div className="font-mono text-xs" style={{ color: 'var(--text-muted)' }}>{c.comm_id || '—'}</div>
               <div className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.call_type}</div>
-              <div>
+              <div onClick={e => e.stopPropagation()}>
                 {c.record_url ? (
                   <a href={c.record_url} target="_blank" rel="noreferrer"
                     className="flex items-center gap-1 transition-opacity hover:opacity-70"
@@ -331,9 +337,9 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
                   <span style={{ color: 'var(--text-muted)' }}>—</span>
                 )}
               </div>
-              <div>
+              <div onClick={e => e.stopPropagation()}>
                 {hasTr ? (
-                  <button onClick={() => setModalCall(c)}
+                  <button onClick={() => onGoToTranscription?.(c.comm_id)}
                     className="flex items-center gap-1 transition-opacity hover:opacity-70"
                     style={{ color: 'var(--brand-green)' }}>
                     <Icon name="FileText" size={11} />
@@ -355,7 +361,7 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
                   <span style={{ color: 'var(--text-muted)' }}>—</span>
                 )}
               </div>
-              <div className="flex justify-end">
+              <div className="flex justify-end" onClick={e => e.stopPropagation()}>
                 <button
                   onClick={() => hideCall(c.comm_id)}
                   className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity hover:opacity-100"

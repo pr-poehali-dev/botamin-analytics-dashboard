@@ -242,14 +242,14 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
                 Полный список с фильтрацией по дате, длительности и поиском по ID
               </p>
             </div>
-            <CallsTable calls={data.calls} />
+            <CallsTable calls={data.calls} onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} />
           </div>
         )}
 
         {/* ── ТРАНСКРИБАЦИЯ ── */}
         {tab === 'transcription' && (
           <div className="animate-fade-in">
-            <TranscriptionTab calls={data.calls} initialCommId={transcriptionCommId} />
+            <TranscriptionTab key={transcriptionCommId || 'default'} calls={data.calls} initialCommId={transcriptionCommId} />
           </div>
         )}
 
