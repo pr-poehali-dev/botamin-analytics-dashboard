@@ -122,12 +122,36 @@ def parse_transcript(op: dict) -> dict:
         replicas.append({'speaker': speaker, 'speaker_label': label, 'text': text, 'start_time': start_r})
         full_text.append(f'{label}: {text}')
     replicas.sort(key=lambda r: r['start_time'])
+
+    # Определяем автоответчик: если в начале идут только реплики клиента
+    # с типичными IVR-фразами (нажмите, добро пожаловать, пресс и т.д.)
+    ivr_keywords = ['нажмите', 'добро пожаловать', 'наберите', 'соединяем', 'оставайтесь', 'записываются', 'внутренний номер', 'пресс', 'press']
+    ivr_end_idx = None
+    for idx, r in enumerate(replicas):
+        if r['speaker'] == 'operator':
+            ivr_end_idx = idx
+            break
+        text_lower = r['text'].lower()
+        is_ivr = any(kw in text_lower for kw in ivr_keywords)
+        if not is_ivr and idx > 0:
+            ivr_end_idx = idx
+            break
+    has_ivr = ivr_end_idx is not None and ivr_end_idx > 0
+
+    for idx, r in enumerate(replicas):
+        if has_ivr and idx < ivr_end_idx:
+            r['segment'] = 'ivr'
+        else:
+            r['segment'] = 'live'
+
     return {
         'full_text':        '\n'.join(full_text),
         'replicas':         replicas,
         'replica_count':    len(replicas),
         'operator_replicas': sum(1 for r in replicas if r['speaker'] == 'operator'),
         'client_replicas':   sum(1 for r in replicas if r['speaker'] == 'client'),
+        'has_ivr':           has_ivr,
+        'ivr_end_idx':       ivr_end_idx,
     }
 
 

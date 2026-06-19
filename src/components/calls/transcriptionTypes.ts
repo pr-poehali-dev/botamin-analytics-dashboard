@@ -8,6 +8,7 @@ export interface Replica {
   speaker_label: string;
   text: string;
   start_time: number;
+  segment?: 'ivr' | 'live';
 }
 
 export interface Analysis {
@@ -41,6 +42,8 @@ export interface TranscriptResult {
   status: JobStatus;
   error?: string;
   cached?: boolean;
+  has_ivr?: boolean;
+  ivr_end_idx?: number;
 }
 
 export const interestColor: Record<string, string> = {

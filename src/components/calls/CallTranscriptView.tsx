@@ -1,14 +1,51 @@
 import { useState } from 'react';
 import Icon from '@/components/ui/icon';
-import { type TranscriptResult } from '@/components/calls/transcriptionTypes';
+import { type TranscriptResult, type Replica } from '@/components/calls/transcriptionTypes';
 import CallAnalysisCard from '@/components/calls/CallAnalysisCard';
 
 export default function CallTranscriptView({ result, onAnalyze }: { result: TranscriptResult; onAnalyze: () => void }) {
   const [showReplicas, setShowReplicas] = useState(true);
+  const [showIvr, setShowIvr] = useState(false);
+
+  const ivrReplicas = result.replicas.filter((r: Replica) => r.segment === 'ivr');
+  const liveReplicas = result.replicas.filter((r: Replica) => r.segment === 'live' || !r.segment);
+  const hasIvr = result.has_ivr && ivrReplicas.length > 0;
+
+  const renderReplica = (r: Replica, i: number) => {
+    const isOperator = r.speaker === 'operator';
+    return (
+      <div key={i} className={`flex gap-3 ${isOperator ? 'justify-end' : 'justify-start'}`}>
+        {!isOperator && (
+          <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+            style={{ background: 'rgba(0,170,255,0.2)', color: '#00aaff' }}>
+            К
+          </div>
+        )}
+        <div className="max-w-[75%]">
+          <div className={`text-xs mb-0.5 ${isOperator ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>
+            {r.speaker_label} · {r.start_time}с
+          </div>
+          <div className="px-3 py-2 rounded-xl text-xs leading-relaxed"
+            style={{
+              background: isOperator ? 'rgba(0,255,136,0.1)' : 'var(--bg-elevated)',
+              color: 'var(--text-primary)',
+            }}>
+            {r.text}
+          </div>
+        </div>
+        {isOperator && (
+          <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
+            style={{ background: 'rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
+            О
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <div className="space-y-4">
-      {/* Статистика транскрипта */}
+      {/* Статистика */}
       <div className="grid grid-cols-3 gap-3">
         {[
           { label: 'Реплик всего', val: result.replica_count },
@@ -55,41 +92,44 @@ export default function CallTranscriptView({ result, onAnalyze }: { result: Tran
           <Icon name={showReplicas ? 'ChevronUp' : 'ChevronDown'} size={13} />
           {showReplicas ? 'Скрыть' : 'Показать'} транскрипт ({result.replica_count} реплик)
         </button>
+
         {showReplicas && (
           <div className="space-y-2 overflow-y-auto pr-1">
-            {result.replicas.map((r, i) => {
-              const isOperator = r.speaker === 'operator';
-              return (
-                <div key={i} className={`flex gap-3 ${isOperator ? 'justify-end' : 'justify-start'}`}>
-                  {/* Клиент — слева */}
-                  {!isOperator && (
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                      style={{ background: 'rgba(0,170,255,0.2)', color: '#00aaff' }}>
-                      К
-                    </div>
-                  )}
-                  <div className="max-w-[75%]">
-                    <div className={`text-xs mb-0.5 ${isOperator ? 'text-right' : ''}`} style={{ color: 'var(--text-muted)' }}>
-                      {r.speaker_label} · {r.start_time}с
-                    </div>
-                    <div className="px-3 py-2 rounded-xl text-xs leading-relaxed"
-                      style={{
-                        background: isOperator ? 'rgba(0,255,136,0.1)' : 'var(--bg-elevated)',
-                        color: 'var(--text-primary)',
-                      }}>
-                      {r.text}
-                    </div>
+
+            {/* IVR блок */}
+            {hasIvr && (
+              <div className="mb-3">
+                <button
+                  onClick={() => setShowIvr(v => !v)}
+                  className="w-full flex items-center gap-2 px-3 py-2 rounded-lg mb-2 transition-opacity hover:opacity-80"
+                  style={{ background: 'rgba(255,170,0,0.08)', border: '1px solid rgba(255,170,0,0.2)' }}>
+                  <Icon name="Bot" size={13} />
+                  <span className="text-xs font-medium" style={{ color: '#ffaa00' }}>
+                    Автоответчик · {ivrReplicas.length} реплик
+                  </span>
+                  <Icon name={showIvr ? 'ChevronUp' : 'ChevronDown'} size={12} style={{ marginLeft: 'auto', color: '#ffaa00' }} />
+                </button>
+                {showIvr && (
+                  <div className="space-y-2 pl-2 opacity-60">
+                    {ivrReplicas.map((r: Replica, i: number) => renderReplica(r, i))}
                   </div>
-                  {/* Оператор — справа */}
-                  {isOperator && (
-                    <div className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold shrink-0 mt-0.5"
-                      style={{ background: 'rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
-                      О
-                    </div>
-                  )}
+                )}
+
+                {/* Разделитель */}
+                <div className="flex items-center gap-2 my-3">
+                  <div className="flex-1 h-px" style={{ background: 'var(--border-default)' }} />
+                  <span className="text-xs px-2 py-0.5 rounded-full flex items-center gap-1"
+                    style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)', border: '1px solid rgba(0,255,136,0.2)' }}>
+                    <Icon name="User" size={11} />
+                    Живой разговор
+                  </span>
+                  <div className="flex-1 h-px" style={{ background: 'var(--border-default)' }} />
                 </div>
-              );
-            })}
+              </div>
+            )}
+
+            {/* Живые реплики */}
+            {liveReplicas.map((r: Replica, i: number) => renderReplica(r, i))}
           </div>
         )}
       </div>
