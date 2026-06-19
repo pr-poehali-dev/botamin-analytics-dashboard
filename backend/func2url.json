@@ -1,4 +1,6 @@
 {
+  "analyze-call": "https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d",
+  "transcribe": "https://functions.poehali.dev/1cc0b8dc-c71b-4292-815d-cdae4f93cea8",
   "calls-parser": "https://functions.poehali.dev/ebde1cfa-0acf-4174-8af2-68fce35fda2d",
   "excel-probe": "https://functions.poehali.dev/7c29effd-324d-484f-ac7d-2e52b9123e15",
   "csv-proxy": "https://functions.poehali.dev/89fd1760-0a4d-4d43-8d04-954d72d384fc"

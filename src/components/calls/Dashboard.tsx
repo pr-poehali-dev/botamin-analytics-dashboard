@@ -6,12 +6,14 @@ import {
 } from 'recharts';
 import CallsTable from '@/components/calls/CallsTable';
 import RecommendationsBlock from '@/components/calls/RecommendationsBlock';
+import TranscriptionTab from '@/components/calls/TranscriptionTab';
 
-type Tab = 'overview' | 'calls' | 'recommendations';
+type Tab = 'overview' | 'calls' | 'transcription' | 'recommendations';
 
 const TABS: { id: Tab; label: string; icon: string }[] = [
   { id: 'overview', label: 'Обзор', icon: 'LayoutDashboard' },
   { id: 'calls', label: 'Все звонки', icon: 'PhoneCall' },
+  { id: 'transcription', label: 'Транскрибация', icon: 'Mic' },
   { id: 'recommendations', label: 'Рекомендации', icon: 'Lightbulb' },
 ];
 
@@ -228,6 +230,13 @@ export default function Dashboard({ data, site, onReset }: { data: CallsData; si
               </p>
             </div>
             <CallsTable calls={data.calls} />
+          </div>
+        )}
+
+        {/* ── ТРАНСКРИБАЦИЯ ── */}
+        {tab === 'transcription' && (
+          <div className="animate-fade-in">
+            <TranscriptionTab calls={data.calls} />
           </div>
         )}
 
