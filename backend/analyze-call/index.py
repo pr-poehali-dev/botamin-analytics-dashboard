@@ -12,10 +12,13 @@ GEMINI_API_KEY = os.environ.get('GEMINI_API_KEY', '')
 DATABASE_URL   = os.environ.get('DATABASE_URL', '')
 SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
 
-GEMINI_URL = (
-    'https://generativelanguage.googleapis.com/v1beta/models/'
-    'gemini-2.0-flash:generateContent?key='
-)
+GEMINI_BASE = 'https://generativelanguage.googleapis.com/v1beta/models/'
+# Пробуем модели по очереди при rate limit
+GEMINI_MODELS = [
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-flash-8b',
+    'gemini-1.5-flash',
+]
 
 SYSTEM_PROMPT = """Ты эксперт по анализу звонков колл-центра рекламного агентства СайтАктив.
 Анализируй транскрипты звонков и возвращай ТОЛЬКО валидный JSON без markdown-обёртки и без ```json.
@@ -149,14 +152,28 @@ def analyze(transcript: str, duration_sec: int) -> dict:
         },
     }
 
-    req = urllib.request.Request(
-        GEMINI_URL + GEMINI_API_KEY,
-        data=json.dumps(body).encode(),
-        headers={'Content-Type': 'application/json'},
-        method='POST',
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
+    result = None
+    for model in GEMINI_MODELS:
+        url = f'{GEMINI_BASE}{model}:generateContent?key={GEMINI_API_KEY}'
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(body).encode(),
+            headers={'Content-Type': 'application/json'},
+            method='POST',
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=30) as resp:
+                result = json.loads(resp.read())
+            print(f'[GEMINI] used model={model}')
+            break
+        except urllib.error.HTTPError as e:
+            if e.code in (429, 503):
+                print(f'[GEMINI] model={model} rate limited ({e.code}), trying next')
+                continue
+            raise
+
+    if result is None:
+        raise Exception('Все модели Gemini недоступны (rate limit)')
 
     content = result['candidates'][0]['content']['parts'][0]['text'].strip()
 
