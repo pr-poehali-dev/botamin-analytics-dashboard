@@ -68,13 +68,9 @@ def start_recognition(yos_url: str) -> str:
             'languageCode':   'ru-RU',
             'model':          'general',
             'audioEncoding':  'MP3',
-            # 2 канала (стерео) + диаризация внутри каждого канала
+            # Стерео: канал 1=клиент, канал 2=оператор
             'audioChannelCount': 2,
-            'diarizationConfig': {
-                'speakerPartition': {
-                    'speakerCount': 2,
-                }
-            },
+            'enableSpeakerLabeling': True,
         }},
         'audio': {'uri': yos_url},
     }
@@ -124,29 +120,28 @@ def parse_transcript(op: dict) -> dict:
         channel = chunk.get('channelTag', '1')
         raw.append({'text': text, 'start': round(start, 1), 'speaker_tag': speaker_tag, 'channel': channel})
 
-    # Определяем кто оператор по speakerTag
-    # При diarizationConfig speakerTag идёт в каждом слове
-    # Оператор — тот, кто первым говорит живым голосом (после IVR):
-    # SpeechKit нумерует speakerTag с 1. Первый живой голос = наш оператор (он поднял трубку).
-    use_speaker_tag = any(r['speaker_tag'] is not None for r in raw)
+    # Логируем все уникальные channelTag и speakerTag для отладки
+    channels = set(r['channel'] for r in raw)
+    tags = set(r['speaker_tag'] for r in raw if r['speaker_tag'] is not None)
+    print(f'[DEBUG] channels={channels} speakerTags={tags}')
+
+    # Определяем спикера по channelTag:
+    # Канал 1 — тот кто звонит нам (входящий = клиент/менеджер Рустам)
+    # Канал 2 — наш оператор (он принял звонок)
+    # Если оба на канале 1 — используем speakerTag (диаризация)
+    all_channel_1 = all(r['channel'] == '1' for r in raw)
+
+    use_speaker_tag = all_channel_1 and len(tags) > 1
     if use_speaker_tag:
-        # Ищем первый speakerTag среди живых реплик (пропускаем IVR-паузу в начале)
-        ivr_kw = ['нажмите', 'добро пожаловать', 'наберите', 'соединяем', 'оставайтесь', 'записываются', 'внутренний номер', 'пресс', 'press', 'кабель', 'мариинский']
-        first_live_tag = None
-        for r in raw:
-            if r['speaker_tag'] is not None:
-                is_ivr = any(kw in r['text'].lower() for kw in ivr_kw)
-                if not is_ivr:
-                    first_live_tag = r['speaker_tag']
-                    break
-        # Первый живой спикер = оператор (он снял трубку)
+        # Все голоса на одном канале — используем speakerTag
+        # Первый встреченный speakerTag = клиент (он звонит первым)
         for r in raw:
             tag = r['speaker_tag']
             if tag is not None and tag not in speaker_map:
-                if tag == first_live_tag:
-                    speaker_map[tag] = 'operator'
-                else:
+                if not speaker_map:
                     speaker_map[tag] = 'client'
+                else:
+                    speaker_map[tag] = 'operator'
 
     for r in raw:
         key = (r['start'], r['text'][:40])
@@ -156,8 +151,8 @@ def parse_transcript(op: dict) -> dict:
         if use_speaker_tag and r['speaker_tag'] is not None:
             speaker = speaker_map.get(r['speaker_tag'], 'client')
         else:
-            # Fallback: канал 1=оператор, канал 2=клиент
-            speaker = 'operator' if r['channel'] == '1' else 'client'
+            # Стерео: канал 1=клиент (звонящий), канал 2=оператор (принял)
+            speaker = 'client' if r['channel'] == '1' else 'operator'
         label = 'Оператор' if speaker == 'operator' else 'Клиент'
         replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
         full_text.append(f'{label}: {r["text"]}')
