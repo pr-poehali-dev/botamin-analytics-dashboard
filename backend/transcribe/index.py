@@ -120,42 +120,58 @@ def parse_transcript(op: dict) -> dict:
         channel = chunk.get('channelTag', '1')
         raw.append({'text': text, 'start': round(start, 1), 'speaker_tag': speaker_tag, 'channel': channel})
 
-    # Логируем все уникальные channelTag и speakerTag для отладки
     channels = set(r['channel'] for r in raw)
     tags = set(r['speaker_tag'] for r in raw if r['speaker_tag'] is not None)
     print(f'[DEBUG] channels={channels} speakerTags={tags}')
 
-    # Определяем спикера по channelTag:
-    # Канал 1 — тот кто звонит нам (входящий = клиент/менеджер Рустам)
-    # Канал 2 — наш оператор (он принял звонок)
-    # Если оба на канале 1 — используем speakerTag (диаризация)
-    all_channel_1 = all(r['channel'] == '1' for r in raw)
+    # Фразы-маркеры НАШЕГО оператора (Рустам, менеджер по продажам)
+    our_operator_markers = [
+        'рустам', 'привлечени', 'рост продаж', 'маркетинг',
+        'специализируемся', 'производител', 'как могу к вам',
+        'как я могу к вам', 'меня зовут рустам',
+    ]
 
-    use_speaker_tag = all_channel_1 and len(tags) > 1
-    if use_speaker_tag:
-        # Все голоса на одном канале — используем speakerTag
-        # Первый встреченный speakerTag = клиент (он звонит первым)
+    def is_our_operator(text: str) -> bool:
+        t = text.lower()
+        return any(m in t for m in our_operator_markers)
+
+    has_both_channels = '1' in channels and '2' in channels
+
+    if has_both_channels:
+        # Стерео-запись: определяем какой канал — наш оператор по маркерам
+        # SpeechKit дублирует реплики — одна реплика может быть на обоих каналах
+        # Считаем на каком канале больше маркеров нашего оператора
+        op_score = {'1': 0, '2': 0}
         for r in raw:
-            tag = r['speaker_tag']
-            if tag is not None and tag not in speaker_map:
-                if not speaker_map:
-                    speaker_map[tag] = 'client'
-                else:
-                    speaker_map[tag] = 'operator'
+            if is_our_operator(r['text']):
+                op_score[r['channel']] = op_score.get(r['channel'], 0) + 1
+        # Канал с большим score = наш оператор
+        operator_channel = '1' if op_score.get('1', 0) >= op_score.get('2', 0) else '2'
+        client_channel = '2' if operator_channel == '1' else '1'
+        print(f'[DEBUG] op_score={op_score} operator_channel={operator_channel}')
 
-    for r in raw:
-        key = (r['start'], r['text'][:40])
-        if key in seen:
-            continue
-        seen.add(key)
-        if use_speaker_tag and r['speaker_tag'] is not None:
-            speaker = speaker_map.get(r['speaker_tag'], 'client')
-        else:
-            # Стерео: канал 1=наш оператор (исходящий), канал 2=клиент
-            speaker = 'operator' if r['channel'] == '1' else 'client'
-        label = 'Оператор' if speaker == 'operator' else 'Клиент'
-        replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
-        full_text.append(f'{label}: {r["text"]}')
+        # Дедупликация: реплики дублируются на оба канала — берём уникальные по времени+тексту
+        # но спикера определяем по каналу
+        for r in raw:
+            key = (r['start'], r['text'][:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            speaker = 'operator' if r['channel'] == operator_channel else 'client'
+            label = 'Оператор' if speaker == 'operator' else 'Клиент'
+            replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
+            full_text.append(f'{label}: {r["text"]}')
+    else:
+        # Моно-запись: все на одном канале, определяем по тексту
+        for r in raw:
+            key = (r['start'], r['text'][:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            speaker = 'operator' if is_our_operator(r['text']) else 'client'
+            label = 'Оператор' if speaker == 'operator' else 'Клиент'
+            replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
+            full_text.append(f'{label}: {r["text"]}')
     replicas.sort(key=lambda r: r['start_time'])
 
     # Определяем IVR/автоответчик по тексту (независимо от спикера)
