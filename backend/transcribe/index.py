@@ -51,13 +51,14 @@ def ya_request(url, method='GET', body=None):
 
 
 def start_recognition(yos_url: str) -> str:
+    # Без audioChannelCount — Яндекс микширует каналы в моно и делает диаризацию по голосу
     body = {
         'config': {'specification': {
             'languageCode':          'ru-RU',
             'model':                 'general',
             'audioEncoding':         'MP3',
-            'audioChannelCount':     2,
             'enableSpeakerLabeling': True,
+            'literature_text':       False,
         }},
         'audio': {'uri': yos_url},
     }
