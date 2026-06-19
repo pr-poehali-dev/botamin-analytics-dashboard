@@ -16,6 +16,8 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
     setSelectedCall(call);
     setResult({ comm_id: call.comm_id, full_text: '', replicas: [], replica_count: 0, operator_replicas: 0, client_replicas: 0, status: 'transcribing' });
 
+    const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
+
     try {
       const res = await fetch(TRANSCRIBE_URL, {
         method: 'POST',
@@ -30,12 +32,46 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
       });
       const data = await res.json();
 
-      if (data.status === 'pending') {
-        setResult(prev => prev ? { ...prev, status: 'error', error: 'Звонок слишком длинный для быстрой обработки. Попробуйте позже.' } : null);
-        return;
-      }
       if (data.error) {
         setResult(prev => prev ? { ...prev, status: 'error', error: data.error } : null);
+        return;
+      }
+
+      // Бэкенд не успел за 25 сек — продолжаем опрашивать сами
+      if (data.status === 'started' && data.operation_id) {
+        const params = new URLSearchParams({
+          operation_id: data.operation_id,
+          comm_id: call.comm_id,
+          audio_url: call.record_url || '',
+          date: call.date,
+          duration: call.duration,
+          duration_sec: String(call.duration_sec),
+        });
+
+        for (let i = 0; i < 24; i++) { // до 2 минут
+          await sleep(5000);
+          const pollRes = await fetch(`${TRANSCRIBE_URL}?${params}`);
+          const pollData = await pollRes.json();
+          if (pollData.status === 'done' && pollData.replica_count > 0) {
+            setResult({
+              comm_id: call.comm_id,
+              full_text: pollData.full_text || '',
+              replicas: pollData.replicas || [],
+              replica_count: pollData.replica_count || 0,
+              operator_replicas: pollData.operator_replicas || 0,
+              client_replicas: pollData.client_replicas || 0,
+              has_ivr: pollData.has_ivr,
+              status: 'done',
+              cached: false,
+            });
+            return;
+          }
+          if (pollData.error) {
+            setResult(prev => prev ? { ...prev, status: 'error', error: pollData.error } : null);
+            return;
+          }
+        }
+        setResult(prev => prev ? { ...prev, status: 'error', error: 'Звонок долго обрабатывается, попробуйте позже' } : null);
         return;
       }
 
@@ -46,6 +82,7 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
         replica_count: data.replica_count || 0,
         operator_replicas: data.operator_replicas || 0,
         client_replicas: data.client_replicas || 0,
+        has_ivr: data.has_ivr,
         status: 'done',
         cached: data.cached === true,
       });
