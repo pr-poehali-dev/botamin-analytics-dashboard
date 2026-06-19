@@ -140,49 +140,48 @@ def parse_transcript(op: dict) -> dict:
     has_both_channels = '1' in channels and '2' in channels
 
     if has_both_channels:
-        # Стерео: SpeechKit иногда дублирует реплику на оба канала
-        # Группируем по времени начала — если реплика на ОБОИХ каналах, это дубль
-        # Если только на одном — это уникальная реплика этого спикера
+        # Группируем реплики по времени начала
         from collections import defaultdict
         by_time: dict = defaultdict(list)
         for r in raw:
             by_time[r['start']].append(r)
 
-        # Определяем оператора: ищем уникальные реплики (только на одном канале)
-        # с маркерами нашего оператора — это его канал
-        op_score = {'1': 0, '2': 0}
-        for time_group in by_time.values():
-            if len(time_group) == 1:
-                r = time_group[0]
-                if is_our_operator(r['text']):
-                    op_score[r['channel']] = op_score.get(r['channel'], 0) + 2
-            # Дубль — проверяем оба
-            for r in time_group:
+        # Ключевое наблюдение из логов:
+        # - Уникальные реплики (только на 1 канале) = реплики КЛИЕНТА на его канале
+        # - Дубли (на обоих каналах) = длинные реплики ОПЕРАТОРА, "просачивающиеся" на оба канала
+        # Определяем канал КЛИЕНТА: тот канал у которого есть уникальные (не дублированные) реплики
+        unique_channels: dict = defaultdict(int)
+        for group in by_time.values():
+            if len(group) == 1:
+                unique_channels[group[0]['channel']] += 1
+
+        print(f'[DEBUG] unique_per_channel={dict(unique_channels)}')
+
+        # Канал с уникальными репликами = клиент (клиент говорит коротко, не дублируется)
+        # Канал без уникальных или с меньшим числом = оператор
+        if unique_channels:
+            client_channel = max(unique_channels, key=lambda c: unique_channels[c])
+            operator_channel = '2' if client_channel == '1' else '1'
+        else:
+            # Все дубли — используем маркеры оператора как fallback
+            op_score = {'1': 0, '2': 0}
+            for r in raw:
                 if is_our_operator(r['text']):
                     op_score[r['channel']] = op_score.get(r['channel'], 0) + 1
+            operator_channel = max(op_score, key=lambda c: op_score[c])
+            client_channel = '2' if operator_channel == '1' else '1'
 
-        operator_channel = '1' if op_score.get('1', 0) >= op_score.get('2', 0) else '2'
-        client_channel = '2' if operator_channel == '1' else '1'
-        print(f'[DEBUG] op_score={op_score} operator_channel={operator_channel}')
+        print(f'[DEBUG] operator_channel={operator_channel} client_channel={client_channel}')
 
-        # Формируем реплики: для каждого момента времени берём УНИКАЛЬНЫЕ (не дубли)
-        # Дубли (одинаковое время, похожий текст на обоих каналах) — берём только с operator_channel
+        # Формируем реплики: дубли (на обоих каналах) = оператор, уникальные = по каналу
         for start_time, group in sorted(by_time.items()):
-            if len(group) == 1:
-                # Уникальная реплика — спикер по каналу
+            if len(group) >= 2:
+                # Дубль на обоих каналах = оператор
+                speaker = 'operator'
                 r = group[0]
-                speaker = 'operator' if r['channel'] == operator_channel else 'client'
             else:
-                # Дубль — берём версию с operator_channel как оператора, с client_channel как клиента
-                # Но это одна реплика произнесённая одним человеком — берём только одну
-                # Определяем спикера: если в group есть хоть одна с operator_channel — оператор
-                channels_in_group = {r['channel'] for r in group}
-                if operator_channel in channels_in_group and client_channel in channels_in_group:
-                    # Реплика на обоих каналах = это оператор (его голос пишется на оба канала)
-                    speaker = 'operator'
-                else:
-                    speaker = 'operator' if operator_channel in channels_in_group else 'client'
-                r = group[0]  # текст одинаковый, берём первый
+                r = group[0]
+                speaker = 'client' if r['channel'] == client_channel else 'operator'
 
             key = (r['start'], r['text'][:40])
             if key in seen:
