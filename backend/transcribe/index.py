@@ -44,11 +44,26 @@ def get_s3():
     )
 
 
-def download_audio(audio_url: str) -> bytes:
-    """Скачивает аудио с CoMagic и возвращает байты."""
+def download_audio(audio_url: str) -> tuple:
+    """Скачивает аудио с CoMagic. Возвращает (bytes, content_type, format_hint)."""
     req = urllib.request.Request(audio_url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req, timeout=60) as resp:
-        return resp.read()
+        content_type = resp.headers.get('Content-Type', '')
+        data = resp.read()
+
+    # Определяем формат по magic bytes
+    fmt = 'unknown'
+    if data[:4] == b'OggS':
+        fmt = 'ogg'
+    elif data[:3] == b'ID3' or data[:2] == b'\xff\xfb' or data[:2] == b'\xff\xf3':
+        fmt = 'mp3'
+    elif data[:4] == b'RIFF':
+        fmt = 'wav'
+    elif data[:4] == b'fLaC':
+        fmt = 'flac'
+
+    print(f'[AUDIO] url={audio_url[:60]} size={len(data)} content_type={content_type} magic={data[:4].hex()} fmt={fmt}')
+    return data, content_type, fmt
 
 
 # ── DB ─────────────────────────────────────────────────────────────────
@@ -129,14 +144,23 @@ def yandex_request(url, method='GET', body=None):
         raise
 
 
-def recognize_sync(audio_bytes: bytes) -> dict:
-    """Синхронное распознавание — отправляем байты напрямую. CoMagic отдаёт OGG_OPUS."""
+def recognize_sync(audio_bytes: bytes, fmt: str = 'mp3') -> dict:
+    """Синхронное распознавание — отправляем байты напрямую."""
+    fmt_map = {
+        'ogg':  ('OGG_OPUS',  'audio/ogg'),
+        'mp3':  ('MP3',       'audio/mpeg'),
+        'wav':  ('LINEAR16_PCM', 'audio/wav'),
+        'flac': ('FLAC',      'audio/flac'),
+    }
+    encoding, content_type = fmt_map.get(fmt, ('MP3', 'audio/mpeg'))
+    url = f'{STT_SYNC_URL}?lang=ru-RU&model=general&audioEncoding={encoding}'
+    print(f'[STT] encoding={encoding} size={len(audio_bytes)}')
     req = urllib.request.Request(
-        STT_SYNC_URL + '?lang=ru-RU&model=general&audioEncoding=OGG_OPUS',
+        url,
         data=audio_bytes,
         headers={
             'Authorization': f'Api-Key {YANDEX_API_KEY}',
-            'Content-Type': 'audio/ogg',
+            'Content-Type': content_type,
         },
         method='POST',
     )
@@ -262,15 +286,14 @@ def handler(event: dict, context) -> dict:
 
     # Шаг 1: скачиваем аудио
     try:
-        audio_bytes = download_audio(audio_url)
-        print(f'[AUDIO] downloaded {len(audio_bytes)} bytes for {comm_id}')
+        audio_bytes, content_type, fmt = download_audio(audio_url)
     except Exception as e:
         return {'statusCode': 500, 'headers': cors,
                 'body': json.dumps({'error': f'Ошибка скачивания аудио: {str(e)}'}, ensure_ascii=False)}
 
     # Шаг 2: синхронное распознавание (байты напрямую, без S3)
     try:
-        result = recognize_sync(audio_bytes)
+        result = recognize_sync(audio_bytes, fmt)
     except urllib.error.HTTPError as e:
         code = e.code
         err_body = e.read().decode('utf-8', errors='replace')
