@@ -13,7 +13,24 @@ type DoneMap = Record<string, { replica_count: number; operator_replicas: number
 export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [result, setResult] = useState<TranscriptResult | null>(null);
-  const [doneMap, setDoneMap] = useState<DoneMap>({});
+  const LS_KEY = 'transcription_done_map';
+
+  const loadLocalDoneMap = (): DoneMap => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (_e) { return {}; }
+  };
+  const saveLocalDoneMap = (map: DoneMap) => {
+    try { localStorage.setItem(LS_KEY, JSON.stringify(map)); } catch (_e) { /* ignore */ }
+  };
+
+  const [doneMap, setDoneMapState] = useState<DoneMap>(loadLocalDoneMap);
+
+  const setDoneMap = (updater: DoneMap | ((prev: DoneMap) => DoneMap)) => {
+    setDoneMapState(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      saveLocalDoneMap(next);
+      return next;
+    });
+  };
 
   // Батч-очередь
   const [batchRunning, setBatchRunning] = useState(false);
@@ -22,11 +39,18 @@ export default function TranscriptionTab({ calls }: { calls: CallRecord[] }) {
   const [batchCurrent, setBatchCurrent] = useState('');
   const batchStopRef = useRef(false);
 
-  // Загружаем статусы из БД при старте
+  // Загружаем статусы из БД при старте и мержим с localStorage
   useEffect(() => {
     fetch(BATCH_STATUS_URL)
       .then(r => r.json())
-      .then(d => { if (d.done) setDoneMap(d.done); })
+      .then(d => {
+        if (d.done) {
+          setDoneMap(prev => {
+            const merged = { ...prev, ...d.done };
+            return merged;
+          });
+        }
+      })
       .catch(() => {});
   }, []);
 

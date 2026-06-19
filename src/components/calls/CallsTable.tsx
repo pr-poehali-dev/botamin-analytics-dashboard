@@ -156,13 +156,23 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
   const [minSec, setMinSec]   = useState('');
   const [maxSec, setMaxSec]   = useState('');
   const [page, setPage]       = useState(1);
-  const [doneMap, setDoneMap] = useState<DoneMap>({});
+  const LS_KEY = 'transcription_done_map';
+  const loadLocal = (): DoneMap => {
+    try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (_e) { return {}; }
+  };
+
+  const [doneMap, setDoneMap] = useState<DoneMap>(loadLocal);
   const [modalCall, setModalCall] = useState<CallRecord | null>(null);
 
   useEffect(() => {
     fetch(BATCH_STATUS_URL)
       .then(r => r.json())
-      .then(d => { if (d.done) setDoneMap(d.done); })
+      .then(d => {
+        if (d.done) {
+          setDoneMap(prev => ({ ...prev, ...d.done }));
+          try { localStorage.setItem(LS_KEY, JSON.stringify({ ...loadLocal(), ...d.done })); } catch (_e) { /* ignore */ }
+        }
+      })
       .catch(() => {});
   }, []);
 
