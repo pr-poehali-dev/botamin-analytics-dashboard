@@ -5,6 +5,14 @@
       "method": "OPTIONS",
       "path": "/",
       "expectedStatus": 200
+    },
+    {
+      "name": "GET without params",
+      "method": "GET",
+      "path": "/",
+      "expectedStatus": 200,
+      "expectedBody": {"status": "processing"},
+      "bodyMatcher": "partial"
     }
   ]
 }

@@ -1,228 +1,146 @@
 """
-Транскрибирует аудиозапись через Yandex SpeechKit STT. v7 (ФИНАЛЬНАЯ)
+Транскрибация через GPT-4o Audio с диаризацией спикеров.
 Схема:
-  1. Проверяет кэш в БД
-  2. Скачивает MP3 с CoMagic
-  3. Загружает в Yandex Object Storage (storage.yandexcloud.net)
-  4. Передаёт YOS-ссылку в SpeechKit longRunningRecognize (async)
-  5. Ждёт результат (до 25 сек), при timeout возвращает operation_id
-  GET ?operation_id=... — опрашивает статус, при done сохраняет в БД
+  POST: скачивает MP3 → отправляет в GPT-4o → получает транскрипт с разделением на спикеров
+  GET ?operation_id=...: не используется (GPT-4o синхронный), оставлен для совместимости
 """
 import json
 import os
 import base64
 import time
 import urllib.request
-import urllib.error
 import psycopg2
 
-YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY', '')
+OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
 DATABASE_URL   = os.environ.get('DATABASE_URL', '')
 SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
-YOS_KEY        = os.environ.get('YOS_ACCESS_KEY', '')
-YOS_SECRET     = os.environ.get('YOS_SECRET_KEY', '')
-YOS_BUCKET     = 'siteactiv-audio'
-YOS_REGION     = 'ru-central1'
-YOS_HOST       = 'storage.yandexcloud.net'
 
-STT_ASYNC_URL = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
-OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
+OPENAI_URL = 'https://api.openai.com/v1/chat/completions'
 
 
-# ── Yandex Object Storage upload через boto3 ───────────────────────────
+# ── OpenAI GPT-4o Audio ─────────────────────────────────────────────────
 
-def yos_upload(data: bytes, key: str, content_type: str = 'audio/mpeg') -> str:
-    """Загружает файл в YOS через boto3. Возвращает публичный URL."""
-    import boto3
-    s3 = boto3.client(
-        's3',
-        endpoint_url=f'https://{YOS_HOST}',
-        aws_access_key_id=YOS_KEY,
-        aws_secret_access_key=YOS_SECRET,
-        region_name=YOS_REGION,
-    )
-    s3.put_object(
-        Bucket=YOS_BUCKET,
-        Key=key,
-        Body=data,
-        ContentType=content_type,
-    )
-    return f'https://{YOS_HOST}/{YOS_BUCKET}/{key}'
+def transcribe_with_gpt(audio_bytes: bytes, filename: str) -> dict:
+    """Отправляет аудио в GPT-4o, получает транскрипт с разделением спикеров."""
+    audio_b64 = base64.b64encode(audio_bytes).decode('utf-8')
 
+    prompt = """Ты — система транскрибации звонков колл-центра. Тебе дана аудиозапись телефонного разговора.
 
-# ── SpeechKit async ────────────────────────────────────────────────────
+Задача:
+1. Транскрибируй весь разговор на русском языке
+2. Раздели реплики по спикерам: ОПЕРАТОР (тот кто звонит, наш менеджер) и КЛИЕНТ (тот кто принял звонок)
+3. Если в начале есть автоответчик/IVR — пометь его как АВТООТВЕТЧИК
+4. Определяй спикеров по голосу, интонации и контексту
 
-def ya_request(url, method='GET', body=None):
-    data = json.dumps(body).encode() if body else None
-    req  = urllib.request.Request(
-        url, data=data, method=method,
-        headers={'Authorization': f'Api-Key {YANDEX_API_KEY}', 'Content-Type': 'application/json'},
-    )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read())
+Верни СТРОГО JSON в таком формате (без markdown, без пояснений):
+{
+  "replicas": [
+    {"speaker": "operator", "text": "текст реплики", "start_time": 0.0},
+    {"speaker": "client", "text": "текст реплики", "start_time": 5.0},
+    {"speaker": "ivr", "text": "текст автоответчика", "start_time": 1.0}
+  ]
+}
 
+Значения speaker: "operator" (наш менеджер), "client" (клиент), "ivr" (автоответчик).
+start_time — примерное время начала реплики в секундах."""
 
-def start_recognition(yos_url: str) -> str:
     body = {
-        'config': {'specification': {
-            'languageCode':   'ru-RU',
-            'model':          'general',
-            'audioEncoding':  'MP3',
-            # Стерео: канал 1=клиент, канал 2=оператор
-            'audioChannelCount': 2,
-            'enableSpeakerLabeling': True,
-        }},
-        'audio': {'uri': yos_url},
+        'model': 'gpt-4o-audio-preview',
+        'modalities': ['text'],
+        'messages': [
+            {
+                'role': 'user',
+                'content': [
+                    {'type': 'text', 'text': prompt},
+                    {
+                        'type': 'input_audio',
+                        'input_audio': {
+                            'data': audio_b64,
+                            'format': 'mp3',
+                        }
+                    }
+                ]
+            }
+        ],
+        'max_tokens': 4096,
+        'temperature': 0,
     }
-    result = ya_request(STT_ASYNC_URL, method='POST', body=body)
-    return result.get('id', '')
+
+    data = json.dumps(body).encode('utf-8')
+    req = urllib.request.Request(
+        OPENAI_URL,
+        data=data,
+        method='POST',
+        headers={
+            'Authorization': f'Bearer {OPENAI_API_KEY}',
+            'Content-Type': 'application/json',
+        }
+    )
+    with urllib.request.urlopen(req, timeout=60) as resp:
+        result = json.loads(resp.read())
+
+    content = result['choices'][0]['message']['content'].strip()
+
+    # Убираем markdown-обёртку если есть
+    if content.startswith('```'):
+        lines = content.split('\n')
+        content = '\n'.join(lines[1:-1])
+
+    return json.loads(content)
 
 
-def poll_operation(op_id: str, max_wait: int = 25) -> dict:
-    deadline = time.time() + max_wait
-    while time.time() < deadline:
-        op = ya_request(OPERATION_URL + op_id)
-        if op.get('done'):
-            return op
-        time.sleep(3)
-    return {'done': False}
+def parse_gpt_transcript(gpt_result: dict) -> dict:
+    """Парсит результат GPT в наш формат."""
+    replicas_raw = gpt_result.get('replicas', [])
+    replicas = []
+    full_text = []
 
+    for r in replicas_raw:
+        speaker = r.get('speaker', 'client')
+        text = r.get('text', '').strip()
+        start_time = float(r.get('start_time', 0.0))
 
-def parse_transcript(op: dict) -> dict:
-    if 'error' in op:
-        return {'error': op['error'].get('message', 'Ошибка распознавания')}
-    chunks     = op.get('response', {}).get('chunks', [])
-    full_text  = []
-    replicas   = []
-    # Определяем спикеров через speakerTag (диаризация) или channelTag (стерео)
-    # speakerTag — более точный: 1=первый голос, 2=второй голос в записи
-    # Первый голос в записи обычно клиент (они отвечают), второй — наш менеджер
-    seen = set()
-    speaker_map: dict = {}  # speakerTag -> 'operator'/'client'
-
-    # Первый проход: собираем все реплики с метаданными
-    raw = []
-    for chunk in chunks:
-        alts = chunk.get('alternatives', [])
-        if not alts:
-            continue
-        best = alts[0]
-        text = best.get('text', '').strip()
         if not text:
             continue
-        words = best.get('words', [])
-        start = 0.0
-        speaker_tag = None
-        if words:
-            st = words[0].get('startTime', '0s')
-            start = float(str(st).replace('s', ''))
-            speaker_tag = words[0].get('speakerTag')
-        channel = chunk.get('channelTag', '1')
-        raw.append({'text': text, 'start': round(start, 1), 'speaker_tag': speaker_tag, 'channel': channel})
 
-    channels = set(r['channel'] for r in raw)
-    tags = set(r['speaker_tag'] for r in raw if r['speaker_tag'] is not None)
-    print(f'[DEBUG] channels={channels} speakerTags={tags}')
-    for r in raw:
-        print(f'[DEBUG] ch={r["channel"]} t={r["start"]} text={r["text"][:60]}')
+        if speaker == 'operator':
+            label = 'Оператор'
+        elif speaker == 'ivr':
+            label = 'Автоответчик'
+        else:
+            speaker = 'client'
+            label = 'Клиент'
 
-    has_both_channels = '1' in channels and '2' in channels
+        segment = 'ivr' if speaker == 'ivr' else 'live'
+        replicas.append({
+            'speaker': speaker,
+            'speaker_label': label,
+            'text': text,
+            'start_time': round(start_time, 1),
+            'segment': segment,
+        })
+        full_text.append(f'{label}: {text}')
 
-    if has_both_channels:
-        # Исходящие звонки, стерео АТС:
-        # Канал 1 = наш оператор, Канал 2 = клиент
-        # НО: SpeechKit дублирует каждую реплику на ОБА канала
-        # Алгоритм:
-        # 1. Берём ВСЕ реплики канала 1 → Оператор
-        # 2. Берём реплики канала 2 которых НЕТ на канале 1 (по тексту) → Клиент
-        ch1_texts = {r['text'] for r in raw if r['channel'] == '1'}
-
-        for r in sorted(raw, key=lambda x: x['start']):
-            if r['channel'] == '1':
-                speaker = 'operator'
-            else:
-                # Канал 2: только если этого текста нет на канале 1
-                if r['text'] in ch1_texts:
-                    continue  # дубль — пропускаем
-                speaker = 'client'
-
-            key = (r['start'], r['text'][:40])
-            if key in seen:
-                continue
-            seen.add(key)
-            label = 'Оператор' if speaker == 'operator' else 'Клиент'
-            replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
-            full_text.append(f'{label}: {r["text"]}')
-    else:
-        # Моно-запись: без стерео — все реплики без разделения
-        for r in sorted(raw, key=lambda x: x['start']):
-            key = (r['start'], r['text'][:40])
-            if key in seen:
-                continue
-            seen.add(key)
-            replicas.append({'speaker': 'client', 'speaker_label': 'Клиент', 'text': r['text'], 'start_time': r['start']})
-            full_text.append(f'Клиент: {r["text"]}')
     replicas.sort(key=lambda r: r['start_time'])
-
-    # Определяем IVR/автоответчик по тексту (независимо от спикера)
-    ivr_keywords = [
-        'нажмите', 'добро пожаловать', 'наберите', 'соединяем', 'оставайтесь',
-        'записываются', 'внутренний номер', 'пресс', 'press',
-        'вы позвонили', 'ваш звонок', 'для связи с', 'для соединения',
-        'дождитесь ответа', 'на линии', 'контроля качества',
-        'мы не получили', 'введите добавочный', 'ответа секретаря',
-        'турбинный завод', 'турбиный завод',
-    ]
-    # Короткие приветствия в начале тоже могут быть IVR (перед блоком нажмите)
-    ivr_greeting = ['здравствуйте', 'добрый день', 'добро пожаловать', 'алло']
-
-    def is_ivr_text(text: str) -> bool:
-        t = text.lower()
-        return any(kw in t for kw in ivr_keywords)
-
-    # Помечаем IVR: сканируем с начала, пока идут IVR-фразы (или короткие приветствия перед ними)
-    ivr_end_idx = 0
-    found_ivr_keyword = False
-    for idx, r in enumerate(replicas):
-        text_lower = r['text'].lower()
-        if is_ivr_text(r['text']):
-            found_ivr_keyword = True
-            ivr_end_idx = idx + 1
-        elif found_ivr_keyword:
-            # После блока IVR-фраз — стоп
-            break
-        elif any(g in text_lower for g in ivr_greeting) and len(r['text']) < 30:
-            # Короткое приветствие до первого IVR-ключевого слова — пропускаем (может быть IVR)
-            ivr_end_idx = idx + 1
-        else:
-            # Не IVR и нет ключевых слов — живой разговор начался
-            break
-
-    # Если нашли IVR-ключевые слова, помечаем блок в начале как IVR
-    has_ivr = found_ivr_keyword and ivr_end_idx > 0
-
-    # Если весь звонок — только IVR без живого разговора
-    all_ivr = has_ivr and ivr_end_idx == len(replicas)
-
-    for idx, r in enumerate(replicas):
-        if has_ivr and idx < ivr_end_idx:
-            r['segment'] = 'ivr'
-            r['speaker'] = 'ivr'
-            r['speaker_label'] = 'Автоответчик'
-        else:
-            r['segment'] = 'live'
-
     live = [r for r in replicas if r['segment'] == 'live']
+
     return {
         'full_text':         '\n'.join(full_text),
         'replicas':          replicas,
         'replica_count':     len(live),
         'operator_replicas': sum(1 for r in live if r['speaker'] == 'operator'),
         'client_replicas':   sum(1 for r in live if r['speaker'] == 'client'),
-        'has_ivr':           has_ivr,
-        'all_ivr':           all_ivr,
-        'ivr_end_idx':       ivr_end_idx,
+        'has_ivr':           any(r['segment'] == 'ivr' for r in replicas),
+        'all_ivr':           all(r['segment'] == 'ivr' for r in replicas) if replicas else False,
     }
+
+
+# ── Audio download ──────────────────────────────────────────────────────
+
+def download_audio(url: str) -> bytes:
+    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        return resp.read()
 
 
 # ── DB ─────────────────────────────────────────────────────────────────
@@ -243,157 +161,114 @@ def get_cached(comm_id):
     if not row:
         return None
     replica_count = row[2] or 0
-    # Если данные пустые — не отдаём из кэша, пересчитаем
     if replica_count == 0:
         return None
-    return {'comm_id': comm_id, 'full_text': row[0] or '', 'replicas': row[1] or [],
-            'replica_count': replica_count, 'operator_replicas': row[3] or 0,
-            'client_replicas': row[4] or 0, 'status': 'done', 'cached': True}
+    return {
+        'comm_id': comm_id,
+        'full_text': row[0] or '',
+        'replicas': row[1] or [],
+        'replica_count': replica_count,
+        'operator_replicas': row[3] or 0,
+        'client_replicas': row[4] or 0,
+        'status': 'done',
+        'cached': True,
+    }
 
 
-def save_to_db(comm_id, audio_url, meta, transcript):
-    if not comm_id:
-        return
+def save_transcript(comm_id, date, duration, duration_sec, parsed):
     conn = get_db(); cur = conn.cursor()
     cur.execute(
         f"""INSERT INTO {SCHEMA}.call_transcripts
-            (comm_id,audio_url,date,duration,duration_sec,full_text,replicas,
-             replica_count,operator_replicas,client_replicas)
-            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)
+            (comm_id, date, duration, duration_sec, full_text, replicas,
+             replica_count, operator_replicas, client_replicas)
+            VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)
             ON CONFLICT (comm_id) DO UPDATE SET
               full_text=EXCLUDED.full_text, replicas=EXCLUDED.replicas,
               replica_count=EXCLUDED.replica_count,
               operator_replicas=EXCLUDED.operator_replicas,
-              client_replicas=EXCLUDED.client_replicas""",
-        (comm_id, audio_url, meta.get('date',''), meta.get('duration',''),
-         meta.get('duration_sec',0), transcript.get('full_text',''),
-         json.dumps(transcript.get('replicas',[]), ensure_ascii=False),
-         transcript.get('replica_count',0), transcript.get('operator_replicas',0),
-         transcript.get('client_replicas',0))
+              client_replicas=EXCLUDED.client_replicas,
+              updated_at=NOW()""",
+        (comm_id, date, duration, duration_sec,
+         parsed['full_text'],
+         json.dumps(parsed['replicas'], ensure_ascii=False),
+         parsed['replica_count'],
+         parsed['operator_replicas'],
+         parsed['client_replicas'])
     )
     conn.commit(); cur.close(); conn.close()
 
 
-# ── Handler ────────────────────────────────────────────────────────────
+# ── CORS ────────────────────────────────────────────────────────────────
+
+CORS = {
+    'Access-Control-Allow-Origin': '*',
+    'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
+    'Access-Control-Allow-Headers': 'Content-Type',
+}
+
+
+# ── Handler ─────────────────────────────────────────────────────────────
 
 def handler(event: dict, context) -> dict:
-    cors = {'Access-Control-Allow-Origin': '*',
-            'Access-Control-Allow-Methods': 'GET, POST, OPTIONS',
-            'Access-Control-Allow-Headers': 'Content-Type'}
-
+    """Транскрибирует звонок через GPT-4o Audio с диаризацией спикеров."""
     if event.get('httpMethod') == 'OPTIONS':
-        return {'statusCode': 200, 'headers': cors, 'body': ''}
+        return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
-    if not YANDEX_API_KEY:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': 'YANDEX_API_KEY не настроен'}, ensure_ascii=False)}
+    method = event.get('httpMethod', 'GET')
 
-    method = event.get('httpMethod', 'POST')
-    params = event.get('queryStringParameters') or {}
-
-    # ── GET: опрос операции ──────────────────────────────────────────
+    # GET — проверка кэша (для polling совместимости)
     if method == 'GET':
-        op_id    = params.get('operation_id', '')
-        comm_id  = params.get('comm_id', '')
-        meta     = {'date': params.get('date',''), 'duration': params.get('duration',''),
-                    'duration_sec': int(params.get('duration_sec', 0) or 0)}
-        audio_url = params.get('audio_url', '')
+        params = event.get('queryStringParameters') or {}
+        comm_id = params.get('comm_id', '')
+        cached = get_cached(comm_id)
+        if cached:
+            return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({**cached, 'status': 'done'}, ensure_ascii=False)}
+        return {'statusCode': 200, 'headers': CORS, 'body': json.dumps({'status': 'processing'}, ensure_ascii=False)}
 
-        if not op_id:
-            return {'statusCode': 400, 'headers': cors,
-                    'body': json.dumps({'error': 'Нужен operation_id'}, ensure_ascii=False)}
-        try:
-            op = ya_request(OPERATION_URL + op_id)
-        except Exception as e:
-            return {'statusCode': 500, 'headers': cors,
-                    'body': json.dumps({'error': str(e)}, ensure_ascii=False)}
-
-        if not op.get('done'):
-            return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-                    'body': json.dumps({'status': 'processing', 'operation_id': op_id}, ensure_ascii=False)}
-
-        t = parse_transcript(op)
-        if 'error' in t:
-            return {'statusCode': 500, 'headers': cors,
-                    'body': json.dumps({'error': t['error']}, ensure_ascii=False)}
-        save_to_db(comm_id, audio_url, meta, t)
-        t.update({'comm_id': comm_id, 'status': 'done', 'cached': False})
-        return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-                'body': json.dumps(t, ensure_ascii=False)}
-
-    # ── POST: запуск ─────────────────────────────────────────────────
-    body_raw = event.get('body', '{}') or '{}'
-    body     = json.loads(body_raw) if isinstance(body_raw, str) else (body_raw or {})
-    audio_url = body.get('audio_url', '')
-    comm_id   = body.get('comm_id', '')
-    meta = {'date': body.get('date',''), 'duration': body.get('duration',''),
-            'duration_sec': body.get('duration_sec', 0)}
-
-    if not audio_url:
-        return {'statusCode': 400, 'headers': cors,
-                'body': json.dumps({'error': 'Нужен audio_url'}, ensure_ascii=False)}
+    # POST — транскрибируем
+    body = json.loads(event.get('body') or '{}')
+    comm_id     = body.get('comm_id', '')
+    audio_url   = body.get('audio_url', '')
+    date        = body.get('date', '')
+    duration    = body.get('duration', '')
+    duration_sec = int(body.get('duration_sec') or 0)
 
     # Кэш
     cached = get_cached(comm_id)
     if cached:
-        return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-                'body': json.dumps(cached, ensure_ascii=False)}
+        return {'statusCode': 200, 'headers': CORS, 'body': json.dumps(cached, ensure_ascii=False)}
 
-    # Шаг 1: скачиваем MP3
-    try:
-        req = urllib.request.Request(audio_url, headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=60) as resp:
-            mp3_bytes = resp.read()
-        print(f'[AUDIO] {comm_id}: {len(mp3_bytes)} bytes')
-    except Exception as e:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': f'Ошибка скачивания: {str(e)}'}, ensure_ascii=False)}
+    if not audio_url:
+        return {'statusCode': 400, 'headers': CORS, 'body': json.dumps({'error': 'нет audio_url'}, ensure_ascii=False)}
 
-    # Шаг 2: загружаем в YOS
-    try:
-        yos_key = f'calls/{comm_id}.mp3'
-        yos_url = yos_upload(mp3_bytes, yos_key)
-        print(f'[YOS] uploaded: {yos_url}')
-    except Exception as e:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': f'Ошибка YOS: {str(e)}'}, ensure_ascii=False)}
+    # Скачиваем аудио
+    print(f'[AUDIO] downloading {comm_id}')
+    audio_bytes = download_audio(audio_url)
+    print(f'[AUDIO] {comm_id}: {len(audio_bytes)} bytes')
 
-    # Шаг 3: запускаем SpeechKit async
-    try:
-        op_id = start_recognition(yos_url)
-        print(f'[STT] operation_id: {op_id}')
-    except urllib.error.HTTPError as e:
-        code = e.code
-        err  = e.read().decode('utf-8', errors='replace')
-        print(f'[STT] HTTP {code}: {err[:300]}')
-        if code == 429:
-            return {'statusCode': 429, 'headers': cors,
-                    'body': json.dumps({'error': 'rate_limit'}, ensure_ascii=False)}
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': f'SpeechKit HTTP {code}: {err[:200]}'}, ensure_ascii=False)}
-    except Exception as e:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': str(e)}, ensure_ascii=False)}
+    # Ограничение: GPT-4o принимает до ~25MB
+    if len(audio_bytes) > 24 * 1024 * 1024:
+        return {'statusCode': 200, 'headers': CORS,
+                'body': json.dumps({'error': 'Файл слишком большой для обработки'}, ensure_ascii=False)}
 
-    # Шаг 4: ждём до 25 сек
-    op = poll_operation(op_id, max_wait=25)
+    # Транскрибируем через GPT-4o
+    print(f'[GPT4O] transcribing {comm_id}')
+    gpt_result = transcribe_with_gpt(audio_bytes, f'{comm_id}.mp3')
+    print(f'[GPT4O] done, replicas: {len(gpt_result.get("replicas", []))}')
 
-    if not op.get('done'):
-        # Возвращаем operation_id — фронт опросит сам
-        return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-                'body': json.dumps({
-                    'status': 'started', 'operation_id': op_id,
-                    'comm_id': comm_id, 'audio_url': audio_url,
-                    'date': meta['date'], 'duration': meta['duration'],
-                    'duration_sec': meta['duration_sec'],
-                }, ensure_ascii=False)}
+    parsed = parse_gpt_transcript(gpt_result)
 
-    t = parse_transcript(op)
-    if 'error' in t:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': t['error']}, ensure_ascii=False)}
+    # Сохраняем в БД
+    if parsed['replica_count'] > 0 or parsed.get('all_ivr'):
+        save_transcript(comm_id, date, duration, duration_sec, parsed)
 
-    save_to_db(comm_id, audio_url, meta, t)
-    t.update({'comm_id': comm_id, 'status': 'done', 'cached': False})
-    return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-            'body': json.dumps(t, ensure_ascii=False)}
+    return {
+        'statusCode': 200,
+        'headers': CORS,
+        'body': json.dumps({
+            **parsed,
+            'comm_id': comm_id,
+            'status': 'done',
+            'cached': False,
+        }, ensure_ascii=False)
+    }
