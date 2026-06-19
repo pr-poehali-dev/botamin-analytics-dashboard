@@ -164,6 +164,21 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
   const [doneMap, setDoneMap] = useState<DoneMap>(loadLocal);
   const [modalCall, setModalCall] = useState<CallRecord | null>(null);
 
+  const HIDDEN_KEY = 'calls_hidden_ids';
+  const loadHidden = (): Set<string> => {
+    try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); } catch (_e) { return new Set(); }
+  };
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHidden);
+
+  const hideCall = (comm_id: string) => {
+    setHiddenIds(prev => {
+      const next = new Set(prev);
+      next.add(comm_id);
+      try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next])); } catch (_e) { /* ignore */ }
+      return next;
+    });
+  };
+
   useEffect(() => {
     fetch(BATCH_STATUS_URL)
       .then(r => r.json())
@@ -177,6 +192,7 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
   }, []);
 
   const filtered = calls.filter(c => {
+    if (hiddenIds.has(c.comm_id)) return false;
     if (search && !c.date.includes(search) && !c.comm_id.includes(search)) return false;
     if (minSec && c.duration_sec < Number(minSec)) return false;
     if (maxSec && c.duration_sec > Number(maxSec)) return false;
@@ -219,9 +235,9 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
 
       {/* таблица */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
-        <div className="grid grid-cols-14 gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider"
+        <div className="grid gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider"
           style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)',
-            gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr' }}>
+            gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr 32px' }}>
           <div>Дата</div>
           <div>Длительность</div>
           <div>Статус</div>
@@ -229,14 +245,15 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
           <div>Тип</div>
           <div>Запись</div>
           <div>Транскрипт</div>
+          <div />
         </div>
         {slice.map((c, i) => {
           const hasTr = !!doneMap[c.comm_id];
           return (
             <div key={i}
-              className="grid gap-2 px-4 py-2.5 text-xs border-b items-center"
+              className="grid gap-2 px-4 py-2.5 text-xs border-b items-center group"
               style={{
-                gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr',
+                gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr 32px',
                 borderColor: 'var(--border-subtle)',
                 background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)',
               }}>
@@ -273,6 +290,15 @@ export default function CallsTable({ calls }: { calls: CallRecord[] }) {
                 ) : (
                   <span style={{ color: 'var(--text-muted)' }}>—</span>
                 )}
+              </div>
+              <div className="flex justify-end">
+                <button
+                  onClick={() => hideCall(c.comm_id)}
+                  className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity hover:opacity-100"
+                  style={{ color: '#ff4444' }}
+                  title="Удалить строку">
+                  <Icon name="X" size={12} />
+                </button>
               </div>
             </div>
           );
