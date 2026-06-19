@@ -87,8 +87,15 @@ def yandex_request(url, method='GET', body=None):
         headers={'Authorization': f'Api-Key {YANDEX_API_KEY}', 'Content-Type': 'application/json'},
         method=method,
     )
-    with urllib.request.urlopen(req, timeout=20) as resp:
-        return json.loads(resp.read())
+    try:
+        with urllib.request.urlopen(req, timeout=20) as resp:
+            result = json.loads(resp.read())
+            print(f'[YA] {method} {url} -> ok: {str(result)[:200]}')
+            return result
+    except urllib.error.HTTPError as e:
+        body_err = e.read().decode('utf-8', errors='replace')
+        print(f'[YA] {method} {url} -> HTTP {e.code}: {body_err[:300]}')
+        raise
 
 
 def start_recognition(audio_url: str) -> str:
