@@ -15,7 +15,6 @@ function getInitialScreen(): Screen {
   const site = loadSite();
   const data = loadCallsDataSync();
   if (site && data) return 'dashboard';
-  if (site) return 'login'; // сайт есть, данных нет — вход без файла
   return 'login';
 }
 
@@ -42,14 +41,15 @@ export default function Index() {
   const handleLogin = (domain: string) => {
     saveSite(domain);
     setSite(domain);
-    // Если данные уже есть — идём на дашборд
     const existing = loadCallsDataSync();
     if (existing) {
+      // Данные есть — идём на дашборд
       hydrateCallsData(existing as Record<string, unknown>).then(full => {
         setData(full as CallsData);
         setScreen('dashboard');
       });
     } else {
+      // Данных нет — предлагаем загрузить файл
       setScreen('upload');
     }
   };
@@ -62,6 +62,7 @@ export default function Index() {
   };
 
   const handleCancelUpload = () => {
+    // Если есть хоть какие-то данные — разрешаем вернуться на дашборд
     setScreen(data ? 'dashboard' : 'login');
   };
 
@@ -72,7 +73,7 @@ export default function Index() {
     setScreen('login');
   };
 
-  // Пока hydration не завершилась — не показываем ничего (мгновенно)
+  // Пока hydration не завершилась — не мигаем пустым экраном
   if (!hydrated && screen === 'dashboard') {
     return null;
   }
