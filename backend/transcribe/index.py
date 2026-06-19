@@ -117,7 +117,7 @@ def parse_transcript(op: dict) -> dict:
         if key in seen:
             continue
         seen.add(key)
-        speaker = 'operator' if channel == '1' else 'client'
+        speaker = 'client' if channel == '1' else 'operator'
         label = 'Оператор' if speaker == 'operator' else 'Клиент'
         replicas.append({'speaker': speaker, 'speaker_label': label, 'text': text, 'start_time': start_r})
         full_text.append(f'{label}: {text}')
