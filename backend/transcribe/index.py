@@ -129,28 +129,37 @@ def parse_transcript(op: dict) -> dict:
     has_both_channels = '1' in channels and '2' in channels
 
     if has_both_channels:
-        # Исходящие звонки, стерео-запись АТС:
-        # Канал 1 (левый) = наш оператор (он инициатор, пишется на левый канал)
-        # Канал 2 (правый) = клиент (принял звонок, пишется на правый канал)
-        # Дубли (одна реплика на обоих каналах) — берём версию с нужного канала, вторую игнорируем
-        # Ключ дедупликации: время + начало текста, но РАЗНЫЕ каналы = РАЗНЫЕ реплики
+        # Исходящие звонки, стерео АТС:
+        # Канал 1 = наш оператор, Канал 2 = клиент
+        # НО: SpeechKit дублирует каждую реплику на ОБА канала
+        # Алгоритм:
+        # 1. Берём ВСЕ реплики канала 1 → Оператор
+        # 2. Берём реплики канала 2 которых НЕТ на канале 1 (по тексту) → Клиент
+        ch1_texts = {r['text'] for r in raw if r['channel'] == '1'}
+
         for r in sorted(raw, key=lambda x: x['start']):
-            speaker = 'operator' if r['channel'] == '1' else 'client'
-            label = 'Оператор' if speaker == 'operator' else 'Клиент'
-            key = (r['channel'], r['start'])
+            if r['channel'] == '1':
+                speaker = 'operator'
+            else:
+                # Канал 2: только если этого текста нет на канале 1
+                if r['text'] in ch1_texts:
+                    continue  # дубль — пропускаем
+                speaker = 'client'
+
+            key = (r['start'], r['text'][:40])
             if key in seen:
                 continue
             seen.add(key)
+            label = 'Оператор' if speaker == 'operator' else 'Клиент'
             replicas.append({'speaker': speaker, 'speaker_label': label, 'text': r['text'], 'start_time': r['start']})
             full_text.append(f'{label}: {r["text"]}')
     else:
-        # Моно-запись: все на одном канале — все реплики без разделения
+        # Моно-запись: без стерео — все реплики без разделения
         for r in sorted(raw, key=lambda x: x['start']):
-            key = (r['channel'], r['start'])
+            key = (r['start'], r['text'][:40])
             if key in seen:
                 continue
             seen.add(key)
-            # Без стерео невозможно точно определить спикера — помечаем всё как клиента
             replicas.append({'speaker': 'client', 'speaker_label': 'Клиент', 'text': r['text'], 'start_time': r['start']})
             full_text.append(f'Клиент: {r["text"]}')
     replicas.sort(key=lambda r: r['start_time'])
