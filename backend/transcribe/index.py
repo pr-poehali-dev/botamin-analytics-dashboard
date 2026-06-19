@@ -68,8 +68,8 @@ def start_recognition(yos_url: str) -> str:
             'languageCode':   'ru-RU',
             'model':          'general',
             'audioEncoding':  'MP3',
-            # Диаризация: SpeechKit сам делит голоса внутри записи
-            'audioChannelCount': 1,
+            # 2 канала (стерео) + диаризация внутри каждого канала
+            'audioChannelCount': 2,
             'diarizationConfig': {
                 'speakerPartition': {
                     'speakerCount': 2,
