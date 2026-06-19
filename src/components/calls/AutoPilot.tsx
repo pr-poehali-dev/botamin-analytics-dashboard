@@ -280,44 +280,92 @@ export default function AutoPilot({ calls, autoStart }: Props) {
 
               {isRunning && (
                 <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="flex gap-1">
-                      {[0,1,2].map(i => (
-                        <div key={i} className="w-2 h-2 rounded-full animate-pulse"
-                          style={{ background: 'var(--brand-green)', animationDelay: `${i*0.2}s` }} />
-                      ))}
+
+                  {/* Общий прогресс */}
+                  <div className="px-4 py-3 rounded-xl" style={{ background: 'var(--bg-elevated)' }}>
+                    <div className="flex items-center justify-between mb-2">
+                      <div className="flex items-center gap-2">
+                        <div className="flex gap-1">
+                          {[0,1,2].map(i => (
+                            <div key={i} className="w-1.5 h-1.5 rounded-full animate-pulse"
+                              style={{ background: 'var(--brand-green)', animationDelay: `${i*0.2}s` }} />
+                          ))}
+                        </div>
+                        <span className="text-xs font-semibold" style={{ color: 'var(--brand-green)' }}>
+                          {phaseLabel}…
+                        </span>
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <span className="text-xs font-mono font-bold" style={{ color: 'var(--text-primary)' }}>
+                          {done}/{total}
+                        </span>
+                        <span className="text-xs font-mono px-1.5 py-0.5 rounded-md"
+                          style={{ background: 'rgba(0,255,136,0.12)', color: 'var(--brand-green)' }}>
+                          {pct}%
+                        </span>
+                      </div>
                     </div>
-                    <span className="text-sm font-semibold" style={{ color: 'var(--brand-green)' }}>
-                      {phaseLabel}… {done}/{total}
-                    </span>
+                    <div className="w-full h-1.5 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                      <div className="h-full rounded-full transition-all duration-500"
+                        style={{ width: `${pct}%`, background: 'linear-gradient(90deg, var(--brand-green), #00ccaa)' }} />
+                    </div>
                   </div>
 
-                  {/* Прогресс-бар */}
-                  <div className="w-full h-2 rounded-full overflow-hidden" style={{ background: 'var(--bg-elevated)' }}>
-                    <div className="h-full rounded-full transition-all duration-500"
-                      style={{ width: `${pct}%`, background: 'var(--brand-green)' }} />
-                  </div>
-
-                  {/* Шаги */}
-                  <div className="space-y-1.5">
+                  {/* Шаги с прогрессом */}
+                  <div className="space-y-2">
                     {[
-                      { id: 'transcribing', label: 'Шаг 1 — Транскрибация', icon: 'Mic', color: 'var(--brand-green)', bg: 'rgba(0,255,136,0.08)' },
-                      { id: 'analyzing',    label: 'Шаг 2 — ИИ-анализ',     icon: 'Sparkles', color: '#00aaff', bg: 'rgba(0,170,255,0.08)' },
-                      { id: 'recommendations', label: 'Шаг 3 — Рекомендации', icon: 'Lightbulb', color: '#ff8c00', bg: 'rgba(255,140,0,0.08)' },
+                      { id: 'transcribing',    label: 'Шаг 1 — Транскрибация', icon: 'Mic',       color: 'var(--brand-green)', bg: 'rgba(0,255,136,0.08)',   border: 'rgba(0,255,136,0.2)' },
+                      { id: 'analyzing',       label: 'Шаг 2 — ИИ-анализ',     icon: 'Sparkles',  color: '#00aaff',            bg: 'rgba(0,170,255,0.08)',   border: 'rgba(0,170,255,0.2)' },
+                      { id: 'recommendations', label: 'Шаг 3 — Рекомендации',  icon: 'Lightbulb', color: '#ff8c00',            bg: 'rgba(255,140,0,0.08)',   border: 'rgba(255,140,0,0.2)' },
                     ].map(step => {
                       const isActive = phase === step.id;
                       const isDone   = (step.id === 'transcribing' && (phase === 'analyzing' || phase === 'recommendations' || phase === 'done'))
                                     || (step.id === 'analyzing' && (phase === 'recommendations' || phase === 'done'));
+                      const stepPct  = isActive ? pct : isDone ? 100 : 0;
+                      const stepDone = isActive ? done : isDone ? total : 0;
+                      const stepTotal = isActive ? total : 0;
+
                       return (
-                        <div key={step.id} className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                          style={{ background: isActive ? step.bg : 'var(--bg-elevated)' }}>
-                          <Icon name={isDone ? 'CheckCircle' : step.icon} size={12}
-                            style={{ color: isActive ? step.color : isDone ? 'var(--brand-green)' : 'var(--text-muted)' }} />
-                          <span className="text-xs flex-1" style={{ color: isActive ? step.color : isDone ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
-                            {step.label}
-                          </span>
-                          {isActive && (
-                            <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: step.color }} />
+                        <div key={step.id} className="px-3 py-2.5 rounded-xl overflow-hidden"
+                          style={{
+                            background: isActive ? step.bg : isDone ? 'rgba(0,255,136,0.04)' : 'var(--bg-elevated)',
+                            border: `1px solid ${isActive ? step.border : isDone ? 'rgba(0,255,136,0.1)' : 'transparent'}`,
+                          }}>
+                          <div className="flex items-center gap-2 mb-1.5">
+                            <Icon name={isDone ? 'CheckCircle' : step.icon} size={12}
+                              style={{ color: isActive ? step.color : isDone ? 'var(--brand-green)' : 'var(--text-muted)', flexShrink: 0 }} />
+                            <span className="text-xs flex-1 font-medium"
+                              style={{ color: isActive ? step.color : isDone ? 'var(--text-secondary)' : 'var(--text-muted)' }}>
+                              {step.label}
+                            </span>
+                            {isActive && stepTotal > 0 && (
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs font-mono" style={{ color: step.color }}>
+                                  {stepDone}/{stepTotal}
+                                </span>
+                                <span className="text-xs font-mono font-bold px-1.5 py-0.5 rounded"
+                                  style={{ background: 'rgba(0,0,0,0.25)', color: step.color }}>
+                                  {stepPct}%
+                                </span>
+                              </div>
+                            )}
+                            {isDone && (
+                              <span className="text-xs font-mono" style={{ color: 'var(--brand-green)' }}>✓ готово</span>
+                            )}
+                            {!isActive && !isDone && (
+                              <div className="w-1.5 h-1.5 rounded-full" style={{ background: 'var(--border-default)' }} />
+                            )}
+                          </div>
+
+                          {/* Прогресс-бар внутри шага */}
+                          {(isActive || isDone) && (
+                            <div className="w-full h-1 rounded-full overflow-hidden" style={{ background: 'rgba(255,255,255,0.07)' }}>
+                              <div className="h-full rounded-full transition-all duration-500"
+                                style={{
+                                  width: `${stepPct}%`,
+                                  background: isDone ? 'rgba(0,255,136,0.4)' : step.color,
+                                }} />
+                            </div>
                           )}
                         </div>
                       );
