@@ -8,6 +8,7 @@ import CallsTable from '@/components/calls/CallsTable';
 import RecommendationsBlock from '@/components/calls/RecommendationsBlock';
 import TranscriptionTab from '@/components/calls/TranscriptionTab';
 import AiInsightsTab from '@/components/calls/AiInsightsTab';
+import AutoPilot from '@/components/calls/AutoPilot';
 
 type Tab = 'overview' | 'calls' | 'transcription' | 'ai-insights' | 'recommendations';
 
@@ -82,6 +83,7 @@ export default function Dashboard({ data, site, onReset, onLogout }: { data: Cal
                 <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--brand-green)' }} />
                 {data.total.toLocaleString('ru-RU')} звонков
               </div>
+              <AutoPilot calls={data.calls} />
               <button onClick={onReset}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
