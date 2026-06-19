@@ -130,13 +130,13 @@ def yandex_request(url, method='GET', body=None):
 
 
 def recognize_sync(audio_bytes: bytes) -> dict:
-    """Синхронное распознавание — отправляем байты напрямую. Работает до ~5 мин."""
+    """Синхронное распознавание — отправляем байты напрямую. CoMagic отдаёт OGG_OPUS."""
     req = urllib.request.Request(
-        STT_SYNC_URL + '?lang=ru-RU&model=general&audioEncoding=MP3&audioChannelCount=2',
+        STT_SYNC_URL + '?lang=ru-RU&model=general&audioEncoding=OGG_OPUS',
         data=audio_bytes,
         headers={
             'Authorization': f'Api-Key {YANDEX_API_KEY}',
-            'Content-Type': 'audio/mpeg',
+            'Content-Type': 'audio/ogg',
         },
         method='POST',
     )
