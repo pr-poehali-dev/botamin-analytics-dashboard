@@ -93,6 +93,7 @@ def parse_transcript(op: dict) -> dict:
     chunks     = op.get('response', {}).get('chunks', [])
     full_text  = []
     replicas   = []
+    seen       = set()
     for chunk in chunks:
         alts = chunk.get('alternatives', [])
         if not alts:
@@ -102,13 +103,19 @@ def parse_transcript(op: dict) -> dict:
         if not text:
             continue
         channel = chunk.get('channelTag', '1')
-        speaker = 'operator' if channel == '1' else 'client'
-        label   = 'Оператор' if speaker == 'operator' else 'Клиент'
+        # Берём только канал 1 (оператор) и канал 2 (клиент),
+        # пропускаем дубли одного текста на той же секунде
         start   = 0.0
         words   = best.get('words', [])
         if words:
             st = words[0].get('startTime', '0s')
             start = float(str(st).replace('s', ''))
+        key = (round(start, 1), text[:30])
+        if key in seen:
+            continue
+        seen.add(key)
+        speaker = 'operator' if channel == '1' else 'client'
+        label   = 'Оператор' if speaker == 'operator' else 'Клиент'
         replicas.append({'speaker': speaker, 'speaker_label': label, 'text': text, 'start_time': round(start, 1)})
         full_text.append(f'{label}: {text}')
     replicas.sort(key=lambda r: r['start_time'])
