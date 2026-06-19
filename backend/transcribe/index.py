@@ -27,10 +27,10 @@ AWS_KEY        = os.environ.get('AWS_ACCESS_KEY_ID', '')
 AWS_SECRET     = os.environ.get('AWS_SECRET_ACCESS_KEY', '')
 
 STT_URL       = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
+STT_SYNC_URL  = 'https://stt.api.cloud.yandex.net/speech/v1/stt:recognize'
 OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
 S3_ENDPOINT   = 'https://bucket.poehali.dev'
 S3_BUCKET     = 'files'
-CDN_BASE      = f'https://cdn.poehali.dev/projects/{AWS_KEY}/bucket'
 
 
 # ── S3 ─────────────────────────────────────────────────────────────────
@@ -44,21 +44,11 @@ def get_s3():
     )
 
 
-def upload_audio_to_s3(audio_url: str, comm_id: str) -> str:
-    """Скачивает аудио по URL и загружает в S3. Возвращает CDN URL."""
+def download_audio(audio_url: str) -> bytes:
+    """Скачивает аудио с CoMagic и возвращает байты."""
     req = urllib.request.Request(audio_url, headers={'User-Agent': 'Mozilla/5.0'})
     with urllib.request.urlopen(req, timeout=60) as resp:
-        audio_data = resp.read()
-
-    key = f'audio/{comm_id}.mp3'
-    s3 = get_s3()
-    s3.put_object(
-        Bucket=S3_BUCKET,
-        Key=key,
-        Body=audio_data,
-        ContentType='audio/mpeg',
-    )
-    return f'{CDN_BASE}/{key}'
+        return resp.read()
 
 
 # ── DB ─────────────────────────────────────────────────────────────────
@@ -139,20 +129,19 @@ def yandex_request(url, method='GET', body=None):
         raise
 
 
-def start_recognition(s3_audio_url: str) -> str:
-    """Запускает распознавание. s3_audio_url должен быть на storage.yandexcloud.net или CDN."""
-    body = {
-        'config': {'specification': {
-            'languageCode': 'ru-RU',
-            'model': 'general',
-            'audioEncoding': 'MP3',
-            'audioChannelCount': 2,
-            'enableSpeakerLabeling': True,
-        }},
-        'audio': {'uri': s3_audio_url}
-    }
-    result = yandex_request(STT_URL, method='POST', body=body)
-    return result.get('id', '')
+def recognize_sync(audio_bytes: bytes) -> dict:
+    """Синхронное распознавание — отправляем байты напрямую. Работает до ~5 мин."""
+    req = urllib.request.Request(
+        STT_SYNC_URL + '?lang=ru-RU&model=general&audioEncoding=MP3&audioChannelCount=2',
+        data=audio_bytes,
+        headers={
+            'Authorization': f'Api-Key {YANDEX_API_KEY}',
+            'Content-Type': 'audio/mpeg',
+        },
+        method='POST',
+    )
+    with urllib.request.urlopen(req, timeout=120) as resp:
+        return json.loads(resp.read())
 
 
 def check_operation(operation_id: str) -> dict:
@@ -271,39 +260,45 @@ def handler(event: dict, context) -> dict:
         return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
                 'body': json.dumps(cached, ensure_ascii=False)}
 
-    # Шаг 1: скачиваем аудио и загружаем в S3
+    # Шаг 1: скачиваем аудио
     try:
-        s3_url = upload_audio_to_s3(audio_url, comm_id)
-        print(f'[S3] uploaded: {s3_url}')
+        audio_bytes = download_audio(audio_url)
+        print(f'[AUDIO] downloaded {len(audio_bytes)} bytes for {comm_id}')
     except Exception as e:
         return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': f'Ошибка загрузки аудио: {str(e)}'}, ensure_ascii=False)}
+                'body': json.dumps({'error': f'Ошибка скачивания аудио: {str(e)}'}, ensure_ascii=False)}
 
-    # Шаг 2: запускаем распознавание
+    # Шаг 2: синхронное распознавание (байты напрямую, без S3)
     try:
-        operation_id = start_recognition(s3_url)
+        result = recognize_sync(audio_bytes)
     except urllib.error.HTTPError as e:
         code = e.code
+        err_body = e.read().decode('utf-8', errors='replace')
+        print(f'[STT] HTTP {code}: {err_body[:300]}')
         if code == 429:
             return {'statusCode': 429, 'headers': cors,
                     'body': json.dumps({'error': 'rate_limit'}, ensure_ascii=False)}
         return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': f'SpeechKit HTTP {code}'}, ensure_ascii=False)}
+                'body': json.dumps({'error': f'SpeechKit HTTP {code}: {err_body[:200]}'}, ensure_ascii=False)}
     except Exception as e:
         return {'statusCode': 500, 'headers': cors,
                 'body': json.dumps({'error': str(e)}, ensure_ascii=False)}
 
-    if not operation_id:
-        return {'statusCode': 500, 'headers': cors,
-                'body': json.dumps({'error': 'operation_id не получен'}, ensure_ascii=False)}
+    # Синхронный API возвращает { "result": "текст" } без разделения на каналы
+    text = result.get('result', '').strip()
+    print(f'[STT] result: {text[:100]}')
 
+    transcript = {
+        'full_text': f'Оператор/Клиент: {text}' if text else '',
+        'replicas': [{'speaker': 'operator', 'speaker_label': 'Диалог', 'text': text, 'start_time': 0.0}] if text else [],
+        'replica_count': 1 if text else 0,
+        'operator_replicas': 1 if text else 0,
+        'client_replicas': 0,
+    }
+
+    if text:
+        save_to_db(comm_id, audio_url, meta, transcript)
+
+    transcript.update({'comm_id': comm_id, 'status': 'done', 'cached': False})
     return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-            'body': json.dumps({
-                'status': 'started',
-                'operation_id': operation_id,
-                'comm_id': comm_id,
-                'audio_url': audio_url,
-                'date': meta['date'],
-                'duration': meta['duration'],
-                'duration_sec': meta['duration_sec'],
-            }, ensure_ascii=False)}
+            'body': json.dumps(transcript, ensure_ascii=False)}
