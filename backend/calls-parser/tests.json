@@ -1,0 +1,12 @@
+{
+  "tests": [
+    {
+      "name": "Parse Excel from URL",
+      "method": "GET",
+      "path": "/?url=https://cdn.poehali.dev/projects/6a84af2c-c107-4039-b71a-e57da70119f0/bucket/f46cc9cf-190b-4379-8e94-6225cc11ec61.xlsx",
+      "expectedStatus": 200,
+      "expectedBody": {"total": 3263},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
