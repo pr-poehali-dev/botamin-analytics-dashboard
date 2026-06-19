@@ -47,7 +47,7 @@ function KPI({ icon, label, value, sub, accent }: {
   );
 }
 
-export default function Dashboard({ data, onReset }: { data: CallsData; onReset: () => void }) {
+export default function Dashboard({ data, site, onReset }: { data: CallsData; site?: string; onReset: () => void }) {
   const [tab, setTab] = useState<Tab>('overview');
 
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
@@ -65,10 +65,12 @@ export default function Dashboard({ data, onReset }: { data: CallsData; onReset:
               <div className="w-7 h-7 rounded-md flex items-center justify-center font-black text-sm"
                 style={{ background: 'var(--brand-green)', color: '#000' }}>S</div>
               <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>СайтАктив</span>
-              <span className="text-xs px-2 py-0.5 rounded-full hidden sm:inline"
-                style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
-                Аналитика звонков
-              </span>
+              {site && (
+                <span className="text-xs px-2 py-0.5 rounded-full hidden sm:inline flex items-center gap-1"
+                  style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+                  {site}
+                </span>
+              )}
             </div>
             <div className="flex items-center gap-2">
               <div className="px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5"
@@ -79,8 +81,8 @@ export default function Dashboard({ data, onReset }: { data: CallsData; onReset:
               <button onClick={onReset}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
-                <Icon name="Upload" size={12} />
-                <span className="hidden sm:inline">Загрузить другой</span>
+                <Icon name="RefreshCw" size={12} />
+                <span className="hidden sm:inline">Новый анализ</span>
               </button>
             </div>
           </div>
