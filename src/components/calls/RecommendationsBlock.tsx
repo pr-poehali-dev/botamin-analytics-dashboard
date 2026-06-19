@@ -76,18 +76,52 @@ export default function RecommendationsBlock({ data }: { data: CallsData }) {
 
       {/* KPI-сводка из ИИ */}
       {aiRecs && aiRecs.total > 0 && (
-        <div className="grid grid-cols-2 sm:grid-cols-5 gap-3">
+        <div className="grid grid-cols-1 sm:grid-cols-5 gap-3">
           {[
-            { label: 'Конверсия', value: `${aiRecs.conversion_rate}%`, color: aiRecs.conversion_rate >= 20 ? 'var(--brand-green)' : '#ff4444' },
-            { label: 'Целевых', value: `${aiRecs.target_rate}%`, color: aiRecs.target_rate >= 50 ? 'var(--brand-green)' : '#ff8c00' },
-            { label: 'Оценка', value: `${aiRecs.avg_score}/10`, color: aiRecs.avg_score >= 7 ? 'var(--brand-green)' : aiRecs.avg_score >= 5 ? '#ff8c00' : '#ff4444' },
-            { label: 'Скрипт', value: `${aiRecs.script_rate}%`, color: aiRecs.script_rate >= 70 ? 'var(--brand-green)' : '#ff8c00' },
-            { label: 'Возражения', value: `${aiRecs.objection_rate}%`, color: aiRecs.objection_rate >= 60 ? 'var(--brand-green)' : '#ff4444' },
+            {
+              icon: 'TrendingUp',
+              label: 'Конверсия в продажу',
+              hint: 'Доля звонков где договорились о сделке',
+              value: `${aiRecs.conversion_rate}%`,
+              color: aiRecs.conversion_rate >= 20 ? 'var(--brand-green)' : '#ff4444',
+            },
+            {
+              icon: 'Target',
+              label: 'Целевые звонки',
+              hint: 'Звонки от реальных потенциальных клиентов',
+              value: `${aiRecs.target_rate}%`,
+              color: aiRecs.target_rate >= 50 ? 'var(--brand-green)' : '#ff8c00',
+            },
+            {
+              icon: 'Star',
+              label: 'Качество разговора',
+              hint: 'Средняя оценка работы оператора по 10-балльной шкале',
+              value: `${aiRecs.avg_score}/10`,
+              color: aiRecs.avg_score >= 7 ? 'var(--brand-green)' : aiRecs.avg_score >= 5 ? '#ff8c00' : '#ff4444',
+            },
+            {
+              icon: 'ClipboardList',
+              label: 'Соблюдение скрипта',
+              hint: 'Как часто оператор следовал утверждённому сценарию продаж',
+              value: `${aiRecs.script_rate}%`,
+              color: aiRecs.script_rate >= 70 ? 'var(--brand-green)' : '#ff8c00',
+            },
+            {
+              icon: 'ShieldCheck',
+              label: 'Отработка возражений',
+              hint: 'Как часто оператор успешно отвечал на отказы и сомнения клиента',
+              value: `${aiRecs.objection_rate}%`,
+              color: aiRecs.objection_rate >= 60 ? 'var(--brand-green)' : '#ff4444',
+            },
           ].map((kpi, i) => (
-            <div key={i} className="rounded-xl px-3 py-2.5 text-center"
+            <div key={i} className="rounded-xl px-4 py-3"
               style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
-              <div className="text-lg font-black font-mono" style={{ color: kpi.color }}>{kpi.value}</div>
-              <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{kpi.label}</div>
+              <div className="flex items-center gap-2 mb-2">
+                <Icon name={kpi.icon} size={13} style={{ color: kpi.color, flexShrink: 0 }} />
+                <span className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>{kpi.label}</span>
+              </div>
+              <div className="text-2xl font-black font-mono mb-1" style={{ color: kpi.color }}>{kpi.value}</div>
+              <div className="text-xs leading-relaxed" style={{ color: 'var(--text-muted)' }}>{kpi.hint}</div>
             </div>
           ))}
         </div>

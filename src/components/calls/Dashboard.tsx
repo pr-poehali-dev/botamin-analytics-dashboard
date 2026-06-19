@@ -277,14 +277,6 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
         {/* ── РЕКОМЕНДАЦИИ ── */}
         {tab === 'recommendations' && (
           <div className="animate-fade-in">
-            <div className="mb-5">
-              <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
-                Рекомендации для роста конверсии
-              </h1>
-              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-                На основе анализа {data.total.toLocaleString('ru-RU')} звонков
-              </p>
-            </div>
             <RecommendationsBlock data={data} />
           </div>
         )}
