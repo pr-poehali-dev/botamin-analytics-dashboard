@@ -255,7 +255,7 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
         {/* ── АНАЛИТИКА ИИ ── */}
         {tab === 'ai-insights' && (
           <div className="animate-fade-in">
-            <AiInsightsTab />
+            <AiInsightsTab onGoToTranscription={(commId) => { setTab('transcription'); }} />
           </div>
         )}
 

@@ -29,9 +29,12 @@ const outcomeColor: Record<string, string> = {
   'Успех': 'var(--brand-green)', 'Отказ': '#ff4444', 'В работе': '#ff8c00',
 };
 
-function CallsModal({ filter, title, onClose }: { filter: string; title: string; onClose: () => void }) {
-  const [calls, setCalls]   = useState<FilterCall[]>([]);
-  const [loading, setLoading] = useState(true);
+function CallsModal({ filter, title, onClose, onGoToTranscription }: {
+  filter: string; title: string; onClose: () => void;
+  onGoToTranscription?: (commId?: string) => void;
+}) {
+  const [calls, setCalls]       = useState<FilterCall[]>([]);
+  const [loading, setLoading]   = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
 
   useState(() => {
@@ -42,10 +45,10 @@ function CallsModal({ filter, title, onClose }: { filter: string; title: string;
   });
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+    <div className="fixed inset-0 z-50 flex items-start justify-center p-4 pt-16"
       style={{ background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(6px)' }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-2xl max-h-[85vh] flex flex-col rounded-2xl overflow-hidden"
+      <div className="w-full max-w-2xl max-h-[80vh] flex flex-col rounded-2xl overflow-hidden"
         style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
 
         {/* Шапка */}
@@ -174,6 +177,18 @@ function CallsModal({ filter, title, onClose }: { filter: string; title: string;
                         </p>
                       </div>
                     )}
+
+                    {/* Кнопка перехода к транскрипту */}
+                    {onGoToTranscription && (
+                      <button
+                        onClick={() => { onGoToTranscription(c.comm_id); onClose(); }}
+                        className="flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-semibold w-full transition-all hover:opacity-80"
+                        style={{ background: 'rgba(0,255,136,0.08)', border: '1px solid rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
+                        <Icon name="FileText" size={13} />
+                        Открыть транскрипт звонка
+                        <Icon name="ArrowRight" size={12} style={{ marginLeft: 'auto' }} />
+                      </button>
+                    )}
                   </div>
                 )}
               </div>
@@ -224,11 +239,12 @@ interface Props {
   onBatchAnalyze: () => void;
   onStopBatch: () => void;
   onRefresh: () => void;
+  onGoToTranscription?: (commId?: string) => void;
 }
 
 export default function AiInsightsKpi({
   stats, pendingCount, batchRunning, batchDone, batchTotal, batchCurrent,
-  onBatchAnalyze, onStopBatch, onRefresh,
+  onBatchAnalyze, onStopBatch, onRefresh, onGoToTranscription,
 }: Props) {
   const [modal, setModal] = useState<{ filter: string; title: string } | null>(null);
 
@@ -310,6 +326,7 @@ export default function AiInsightsKpi({
           filter={modal.filter}
           title={modal.title}
           onClose={() => setModal(null)}
+          onGoToTranscription={onGoToTranscription}
         />
       )}
     </>

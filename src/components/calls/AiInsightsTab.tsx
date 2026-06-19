@@ -9,7 +9,7 @@ const AI_STATS_URL      = 'https://functions.poehali.dev/db240be1-ed61-46d9-bcbf
 const BATCH_ANALYZE_URL = 'https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018';
 const ANALYZE_URL       = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
 
-export default function AiInsightsTab() {
+export default function AiInsightsTab({ onGoToTranscription }: { onGoToTranscription?: (commId?: string) => void }) {
   const [stats, setStats]         = useState<AiStats | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
@@ -162,6 +162,7 @@ export default function AiInsightsTab() {
         onBatchAnalyze={handleBatchAnalyze}
         onStopBatch={() => { stopRef.current = true; }}
         onRefresh={load}
+        onGoToTranscription={onGoToTranscription}
       />
       <AiInsightsCharts stats={stats} />
       <AiInsightsOutcomes stats={stats} />
