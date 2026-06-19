@@ -25,7 +25,7 @@ type DoneMap = Record<string, {
   ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
 }>;
 
-export default function TranscriptionTab({ calls, initialCommId }: { calls: CallRecord[]; initialCommId?: string }) {
+export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone }: { calls: CallRecord[]; initialCommId?: string; onAnalysisDone?: () => void }) {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [result, setResult] = useState<TranscriptResult | null>(null);
   const [showIgnoreMenu, setShowIgnoreMenu] = useState(false);
@@ -237,6 +237,7 @@ export default function TranscriptionTab({ calls, initialCommId }: { calls: Call
           },
         },
       }));
+      onAnalysisDone?.();
     } catch {
       setResult(prev => prev ? { ...prev, status: 'done' } : null);
     }

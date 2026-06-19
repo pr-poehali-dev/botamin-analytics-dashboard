@@ -55,6 +55,7 @@ function KPI({ icon, label, value, sub, accent }: {
 export default function Dashboard({ data, site, autoStart, onReset, onLogout }: { data: CallsData; site?: string; autoStart?: boolean; onReset: () => void; onLogout?: () => void }) {
   const [tab, setTab] = useState<Tab>('overview');
   const [transcriptionCommId, setTranscriptionCommId] = useState<string | undefined>();
+  const [analyticsRefreshTick, setAnalyticsRefreshTick] = useState(0);
 
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
   const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
@@ -249,14 +250,14 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
         {/* ── ТРАНСКРИБАЦИЯ ── */}
         {tab === 'transcription' && (
           <div className="animate-fade-in">
-            <TranscriptionTab key={transcriptionCommId || 'default'} calls={data.calls} initialCommId={transcriptionCommId} />
+            <TranscriptionTab key={transcriptionCommId || 'default'} calls={data.calls} initialCommId={transcriptionCommId} onAnalysisDone={() => setAnalyticsRefreshTick(t => t + 1)} />
           </div>
         )}
 
         {/* ── АНАЛИТИКА ИИ ── */}
         {tab === 'ai-insights' && (
           <div className="animate-fade-in">
-            <AiInsightsTab onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} />
+            <AiInsightsTab onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} refreshTick={analyticsRefreshTick} />
           </div>
         )}
 
