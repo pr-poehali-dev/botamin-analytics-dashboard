@@ -1,139 +1,200 @@
 """
-Транскрибация через Whisper + GPT-4o диаризация.
+Транскрибация через Yandex SpeechKit v2 longRunningRecognize.
 Схема:
-  POST: скачивает MP3 → Whisper транскрибирует → GPT-4o делит на спикеров → сохраняет в БД
+  POST: скачивает MP3 → загружает в YOS → запускает async STT → ждёт результат
   GET ?comm_id=...: возвращает кэш из БД
 """
 import json
 import os
+import time
 import urllib.request
 import psycopg2
 
-OPENAI_API_KEY = os.environ.get('OPENAI_API_KEY', '')
+YANDEX_API_KEY = os.environ.get('YANDEX_API_KEY', '')
 DATABASE_URL   = os.environ.get('DATABASE_URL', '')
 SCHEMA         = os.environ.get('MAIN_DB_SCHEMA', 't_p87080492_botamin_analytics_da')
+YOS_KEY        = os.environ.get('YOS_ACCESS_KEY', '')
+YOS_SECRET     = os.environ.get('YOS_SECRET_KEY', '')
+YOS_BUCKET     = 'siteactiv-audio'
+YOS_REGION     = 'ru-central1'
+YOS_HOST       = 'storage.yandexcloud.net'
 
-WHISPER_URL = 'https://api.openai.com/v1/audio/transcriptions'
-OPENAI_URL  = 'https://api.openai.com/v1/chat/completions'
+STT_ASYNC_URL = 'https://transcribe.api.cloud.yandex.net/speech/stt/v2/longRunningRecognize'
+OPERATION_URL = 'https://operation.api.cloud.yandex.net/operations/'
 
 
-# ── Шаг 1: Whisper — транскрибация с временными метками ─────────────────
+# ── S3 upload через boto3 ────────────────────────────────────────────────
 
-def transcribe_whisper(audio_bytes: bytes, filename: str) -> list:
-    """Транскрибирует аудио через Whisper, возвращает сегменты с timestamps."""
-    boundary = 'Boundary7MA4YWxkTrZu0gW'
-    parts = [
-        (b'model',               b'whisper-1'),
-        (b'language',            b'ru'),
-        (b'response_format',     b'verbose_json'),
-        (b'timestamp_granularities[]', b'segment'),
-    ]
-    body_parts = []
-    for name, value in parts:
-        body_parts.append(
-            b'--' + boundary.encode() +
-            b'\r\nContent-Disposition: form-data; name="' + name + b'"\r\n\r\n' +
-            value
-        )
-    body_parts.append(
-        b'--' + boundary.encode() +
-        b'\r\nContent-Disposition: form-data; name="file"; filename="' + filename.encode() + b'"\r\n' +
-        b'Content-Type: audio/mpeg\r\n\r\n' +
-        audio_bytes
+def yos_upload(data: bytes, key: str) -> str:
+    import boto3
+    s3 = boto3.client(
+        's3',
+        endpoint_url=f'https://{YOS_HOST}',
+        aws_access_key_id=YOS_KEY,
+        aws_secret_access_key=YOS_SECRET,
+        region_name=YOS_REGION,
     )
-    body_parts.append(b'--' + boundary.encode() + b'--')
-    body = b'\r\n'.join(body_parts)
+    s3.put_object(Bucket=YOS_BUCKET, Key=key, Body=data, ContentType='audio/mpeg')
+    return f'https://{YOS_HOST}/{YOS_BUCKET}/{key}'
 
-    req = urllib.request.Request(
-        WHISPER_URL, data=body, method='POST',
-        headers={
-            'Authorization': f'Bearer {OPENAI_API_KEY}',
-            'Content-Type': f'multipart/form-data; boundary={boundary}',
-        }
+
+# ── SpeechKit async ──────────────────────────────────────────────────────
+
+def ya_request(url, method='GET', body=None):
+    data = json.dumps(body).encode() if body else None
+    req  = urllib.request.Request(
+        url, data=data, method=method,
+        headers={'Authorization': f'Api-Key {YANDEX_API_KEY}', 'Content-Type': 'application/json'},
     )
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        result = json.loads(resp.read())
-
-    return result.get('segments', [])
+    with urllib.request.urlopen(req, timeout=20) as resp:
+        return json.loads(resp.read())
 
 
-# ── Шаг 2: GPT-4o — диаризация (кто говорит) ────────────────────────────
-
-def diarize_with_gpt(segments: list) -> dict:
-    """Отправляет сегменты в GPT-4o, получает разметку спикеров."""
-    segments_text = '\n'.join(
-        f'[{round(s["start"], 1)}с] {s["text"].strip()}' for s in segments
-    )
-
-    prompt = f"""Ты анализируешь транскрипт исходящего звонка колл-центра.
-Наш менеджер ЗВОНИТ клиентам и предлагает услуги по маркетингу и привлечению клиентов.
-
-Транскрипт (формат [время] текст):
-{segments_text}
-
-Раздели реплики по спикерам и верни ТОЛЬКО JSON без markdown:
-{{
-  "replicas": [
-    {{"start_time": 0.0, "speaker": "operator", "text": "текст"}},
-    {{"start_time": 5.0, "speaker": "client", "text": "текст"}},
-    {{"start_time": 1.0, "speaker": "ivr", "text": "текст автоответчика"}}
-  ]
-}}
-
-Правила:
-- "operator" — наш менеджер (звонит, предлагает услуги, спрашивает с кем поговорить)
-- "client" — клиент (принял звонок, отвечает)
-- "ivr" — автоответчик в начале (нажмите 1, вы позвонили, ваш звонок важен и т.п.)
-- Объединяй последовательные реплики одного спикера в одну
-- start_time бери из исходного транскрипта"""
-
+def start_recognition(yos_url: str) -> str:
     body = {
-        'model': 'gpt-4o',
-        'messages': [{'role': 'user', 'content': prompt}],
-        'max_tokens': 4096,
-        'temperature': 0,
-        'response_format': {'type': 'json_object'},
+        'config': {'specification': {
+            'languageCode':          'ru-RU',
+            'model':                 'general',
+            'audioEncoding':         'MP3',
+            'audioChannelCount':     2,
+            'enableSpeakerLabeling': True,
+        }},
+        'audio': {'uri': yos_url},
     }
-    data = json.dumps(body, ensure_ascii=False).encode('utf-8')
-    req = urllib.request.Request(
-        OPENAI_URL, data=data, method='POST',
-        headers={
-            'Authorization': f'Bearer {OPENAI_API_KEY}',
-            'Content-Type': 'application/json',
-        }
-    )
-    with urllib.request.urlopen(req, timeout=30) as resp:
-        result = json.loads(resp.read())
-
-    return json.loads(result['choices'][0]['message']['content'])
+    result = ya_request(STT_ASYNC_URL, method='POST', body=body)
+    return result.get('id', '')
 
 
-# ── Парсинг результата ───────────────────────────────────────────────────
+def poll_operation(op_id: str, max_wait: int = 25) -> dict:
+    deadline = time.time() + max_wait
+    while time.time() < deadline:
+        op = ya_request(OPERATION_URL + op_id)
+        if op.get('done'):
+            return op
+        time.sleep(3)
+    return {'done': False, '_op_id': op_id}
 
-def parse_gpt_transcript(gpt_result: dict) -> dict:
-    replicas_raw = gpt_result.get('replicas', [])
-    replicas = []
-    full_text = []
 
-    for r in replicas_raw:
-        speaker = r.get('speaker', 'client')
-        text    = r.get('text', '').strip()
-        start   = float(r.get('start_time', 0.0))
+# ── Парсинг транскрипта ──────────────────────────────────────────────────
+
+def parse_transcript(op: dict) -> dict:
+    if 'error' in op:
+        return {'error': op['error'].get('message', 'Ошибка распознавания')}
+
+    chunks = op.get('response', {}).get('chunks', [])
+    raw = []
+    for chunk in chunks:
+        alts = chunk.get('alternatives', [])
+        if not alts:
+            continue
+        best = alts[0]
+        text = best.get('text', '').strip()
         if not text:
             continue
-        if speaker == 'operator':
-            label = 'Оператор'
-        elif speaker == 'ivr':
-            label = 'Автоответчик'
-        else:
-            speaker = 'client'
-            label = 'Клиент'
-        segment = 'ivr' if speaker == 'ivr' else 'live'
-        replicas.append({'speaker': speaker, 'speaker_label': label,
-                         'text': text, 'start_time': round(start, 1), 'segment': segment})
-        full_text.append(f'{label}: {text}')
+        words = best.get('words', [])
+        start = 0.0
+        speaker_tag = None
+        if words:
+            st = words[0].get('startTime', '0s')
+            start = float(str(st).replace('s', ''))
+            speaker_tag = words[0].get('speakerTag')
+        channel = str(chunk.get('channelTag', '1'))
+        raw.append({'text': text, 'start': round(start, 1),
+                    'speaker_tag': speaker_tag, 'channel': channel})
+
+    channels     = set(r['channel'] for r in raw)
+    speaker_tags = set(r['speaker_tag'] for r in raw if r['speaker_tag'] is not None)
+    print(f'[DEBUG] channels={channels} speakerTags={speaker_tags}')
+    for r in raw:
+        print(f'[DEBUG] ch={r["channel"]} tag={r["speaker_tag"]} t={r["start"]} text={r["text"][:60]}')
+
+    replicas  = []
+    full_text = []
+    seen      = set()
+    has_both  = '1' in channels and '2' in channels
+
+    if has_both:
+        # Стерео: канал 1 = оператор, канал 2 = клиент.
+        # SpeechKit дублирует реплики на оба канала — убираем дубли.
+        ch1_texts = {r['text'] for r in raw if r['channel'] == '1'}
+        for r in sorted(raw, key=lambda x: x['start']):
+            if r['channel'] == '1':
+                speaker = 'operator'
+            else:
+                if r['text'] in ch1_texts:
+                    continue  # дубль с канала 1
+                speaker = 'client'
+            key = (r['start'], r['text'][:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            label = 'Оператор' if speaker == 'operator' else 'Клиент'
+            replicas.append({'speaker': speaker, 'speaker_label': label,
+                             'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
+            full_text.append(f'{label}: {r["text"]}')
+
+    elif len(speaker_tags) >= 2:
+        # Моно + диаризация по speakerTag
+        # Первый спикер с длинной фразой = оператор (он звонит и представляется)
+        sorted_raw = sorted(raw, key=lambda x: x['start'])
+        operator_tag = None
+        for r in sorted_raw:
+            if r['speaker_tag'] and len(r['text']) > 15:
+                operator_tag = r['speaker_tag']
+                break
+        if operator_tag is None and sorted_raw:
+            operator_tag = sorted_raw[0]['speaker_tag']
+
+        for r in sorted_raw:
+            key = (r['start'], r['text'][:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            tag     = r['speaker_tag']
+            speaker = 'operator' if tag == operator_tag else 'client'
+            label   = 'Оператор' if speaker == 'operator' else 'Клиент'
+            replicas.append({'speaker': speaker, 'speaker_label': label,
+                             'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
+            full_text.append(f'{label}: {r["text"]}')
+
+    else:
+        # Моно без диаризации
+        for r in sorted(raw, key=lambda x: x['start']):
+            key = (r['start'], r['text'][:40])
+            if key in seen:
+                continue
+            seen.add(key)
+            replicas.append({'speaker': 'unknown', 'speaker_label': 'Неизвестно',
+                             'text': r['text'], 'start_time': r['start'], 'segment': 'live'})
+            full_text.append(r['text'])
 
     replicas.sort(key=lambda r: r['start_time'])
+
+    # IVR детект
+    ivr_kw = ['нажмите', 'внутренний номер', 'дождитесь ответа', 'ваш звонок',
+               'для соединения', 'записываются', 'контроля качества',
+               'добро пожаловать', 'вы позвонили']
+
+    def is_ivr(text):
+        t = text.lower()
+        return any(k in t for k in ivr_kw)
+
+    ivr_end   = 0
+    found_ivr = False
+    for idx, r in enumerate(replicas):
+        if is_ivr(r['text']):
+            found_ivr = True
+            ivr_end   = idx + 1
+        elif found_ivr:
+            break
+
+    if found_ivr:
+        for idx, r in enumerate(replicas):
+            if idx < ivr_end:
+                r['segment']       = 'ivr'
+                r['speaker']       = 'ivr'
+                r['speaker_label'] = 'Автоответчик'
+
     live = [r for r in replicas if r['segment'] == 'live']
     return {
         'full_text':         '\n'.join(full_text),
@@ -141,12 +202,12 @@ def parse_gpt_transcript(gpt_result: dict) -> dict:
         'replica_count':     len(live),
         'operator_replicas': sum(1 for r in live if r['speaker'] == 'operator'),
         'client_replicas':   sum(1 for r in live if r['speaker'] == 'client'),
-        'has_ivr':           any(r['segment'] == 'ivr' for r in replicas),
-        'all_ivr':           bool(replicas) and all(r['segment'] == 'ivr' for r in replicas),
+        'has_ivr':           found_ivr,
+        'all_ivr':           found_ivr and ivr_end == len(replicas),
     }
 
 
-# ── Скачивание аудио ─────────────────────────────────────────────────────
+# ── Audio download ───────────────────────────────────────────────────────
 
 def download_audio(url: str) -> bytes:
     req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
@@ -209,7 +270,7 @@ CORS = {
 # ── Handler ──────────────────────────────────────────────────────────────
 
 def handler(event: dict, context) -> dict:
-    """Транскрибирует звонок: Whisper → текст, GPT-4o → разделение спикеров."""
+    """Транскрибирует звонок через Yandex SpeechKit с диаризацией."""
     if event.get('httpMethod') == 'OPTIONS':
         return {'statusCode': 200, 'headers': CORS, 'body': ''}
 
@@ -218,13 +279,26 @@ def handler(event: dict, context) -> dict:
     if method == 'GET':
         params  = event.get('queryStringParameters') or {}
         comm_id = params.get('comm_id', '')
-        cached  = get_cached(comm_id)
+        op_id   = params.get('operation_id', '')
+
+        cached = get_cached(comm_id)
         if cached:
             return {'statusCode': 200, 'headers': CORS,
                     'body': json.dumps({**cached, 'status': 'done'}, ensure_ascii=False)}
+
+        if op_id:
+            op = ya_request(OPERATION_URL + op_id)
+            if op.get('done'):
+                parsed = parse_transcript(op)
+                return {'statusCode': 200, 'headers': CORS,
+                        'body': json.dumps({**parsed, 'status': 'done'}, ensure_ascii=False)}
+            return {'statusCode': 200, 'headers': CORS,
+                    'body': json.dumps({'status': 'processing', 'operation_id': op_id}, ensure_ascii=False)}
+
         return {'statusCode': 200, 'headers': CORS,
                 'body': json.dumps({'status': 'processing'}, ensure_ascii=False)}
 
+    # POST
     body         = json.loads(event.get('body') or '{}')
     comm_id      = body.get('comm_id', '')
     audio_url    = body.get('audio_url', '')
@@ -245,25 +319,29 @@ def handler(event: dict, context) -> dict:
     audio_bytes = download_audio(audio_url)
     print(f'[AUDIO] {comm_id}: {len(audio_bytes)} bytes')
 
-    if len(audio_bytes) > 24 * 1024 * 1024:
+    yos_key = f'transcribe/{comm_id}.mp3'
+    print(f'[YOS] uploading {comm_id}')
+    yos_url = yos_upload(audio_bytes, yos_key)
+    print(f'[YOS] done')
+
+    op_id = start_recognition(yos_url)
+    print(f'[STT] operation_id={op_id}')
+
+    if not op_id:
         return {'statusCode': 200, 'headers': CORS,
-                'body': json.dumps({'error': 'Файл слишком большой'}, ensure_ascii=False)}
+                'body': json.dumps({'error': 'Не удалось запустить распознавание'}, ensure_ascii=False)}
 
-    print(f'[WHISPER] transcribing {comm_id}')
-    segments = transcribe_whisper(audio_bytes, f'{comm_id}.mp3')
-    print(f'[WHISPER] segments: {len(segments)}')
+    op = poll_operation(op_id, max_wait=25)
 
-    if not segments:
+    if not op.get('done'):
         return {'statusCode': 200, 'headers': CORS,
-                'body': json.dumps({'error': 'Не удалось распознать речь'}, ensure_ascii=False)}
+                'body': json.dumps({'status': 'processing', 'operation_id': op_id,
+                                    'comm_id': comm_id}, ensure_ascii=False)}
 
-    print(f'[GPT4O] diarizing {comm_id}')
-    gpt_result = diarize_with_gpt(segments)
-    print(f'[GPT4O] replicas: {len(gpt_result.get("replicas", []))}')
+    parsed = parse_transcript(op)
+    print(f'[DONE] {comm_id}: replicas={parsed.get("replica_count")} op={parsed.get("operator_replicas")} cl={parsed.get("client_replicas")}')
 
-    parsed = parse_gpt_transcript(gpt_result)
-
-    if parsed['replica_count'] > 0 or parsed.get('all_ivr'):
+    if parsed.get('replica_count', 0) > 0 or parsed.get('all_ivr'):
         save_transcript(comm_id, date, duration, duration_sec, parsed)
 
     return {
