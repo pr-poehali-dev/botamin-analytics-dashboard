@@ -144,23 +144,35 @@ def yandex_request(url, method='GET', body=None):
         raise
 
 
+def mp3_to_lpcm(mp3_bytes: bytes) -> bytes:
+    """Конвертирует MP3 в LPCM 16kHz mono через pydub."""
+    from pydub import AudioSegment
+    import io
+    audio = AudioSegment.from_mp3(io.BytesIO(mp3_bytes))
+    audio = audio.set_frame_rate(16000).set_channels(1).set_sample_width(2)
+    buf = io.BytesIO()
+    audio.export(buf, format='raw')
+    return buf.getvalue()
+
+
 def recognize_sync(audio_bytes: bytes, fmt: str = 'mp3') -> dict:
-    """Синхронное распознавание — отправляем байты напрямую."""
-    fmt_map = {
-        'ogg':  ('OGG_OPUS',  'audio/ogg'),
-        'mp3':  ('MP3',       'audio/mpeg'),
-        'wav':  ('LINEAR16_PCM', 'audio/wav'),
-        'flac': ('FLAC',      'audio/flac'),
-    }
-    encoding, content_type = fmt_map.get(fmt, ('MP3', 'audio/mpeg'))
-    url = f'{STT_SYNC_URL}?lang=ru-RU&model=general&audioEncoding={encoding}'
-    print(f'[STT] encoding={encoding} size={len(audio_bytes)}')
+    """Синхронное распознавание — конвертируем в LPCM и отправляем байты."""
+    # Конвертируем в LPCM 16kHz mono — единственный надёжный формат для sync API
+    try:
+        lpcm_bytes = mp3_to_lpcm(audio_bytes)
+        print(f'[STT] converted to LPCM: {len(lpcm_bytes)} bytes')
+    except Exception as e:
+        print(f'[STT] convert error: {e}, sending raw')
+        lpcm_bytes = audio_bytes
+
+    url = f'{STT_SYNC_URL}?lang=ru-RU&model=general&audioEncoding=LPCM&sampleRateHertz=16000'
+    print(f'[STT] sending LPCM size={len(lpcm_bytes)}')
     req = urllib.request.Request(
         url,
-        data=audio_bytes,
+        data=lpcm_bytes,
         headers={
             'Authorization': f'Api-Key {YANDEX_API_KEY}',
-            'Content-Type': content_type,
+            'Content-Type': 'audio/x-pcm;bit=16;rate=16000',
         },
         method='POST',
     )
