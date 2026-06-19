@@ -111,9 +111,7 @@ export default function LoginScreen({ onLogin }: Props) {
 
       </div>
 
-      <p className="mt-6 text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>
-        Доступ предоставляется по домену сайта. Данные привязаны к вашему аккаунту.
-      </p>
+
     </div>
   );
 }
