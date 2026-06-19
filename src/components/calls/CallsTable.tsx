@@ -249,11 +249,11 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
         <input
           value={minSec} onChange={e => { setMinSec(e.target.value); setPage(1); }}
-          placeholder="Мин. сек." type="number" className="w-24 px-3 py-2 rounded-lg text-sm outline-none"
+          placeholder="Мин. сек." type="number" className="w-32 px-3 py-2 rounded-lg text-sm outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
         <input
           value={maxSec} onChange={e => { setMaxSec(e.target.value); setPage(1); }}
-          placeholder="Макс. сек." type="number" className="w-24 px-3 py-2 rounded-lg text-sm outline-none"
+          placeholder="Макс. сек." type="number" className="w-32 px-3 py-2 rounded-lg text-sm outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
         {(search || minSec || maxSec) && (
           <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setPage(1); }}
