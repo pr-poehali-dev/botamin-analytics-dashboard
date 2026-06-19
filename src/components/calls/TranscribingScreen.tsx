@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useState, useRef } from 'react';
 import { type CallsData, type CallRecord } from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
 
@@ -26,11 +26,24 @@ interface Props {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-async function transcribeCall(call: CallRecord, retries = 5): Promise<void> {
-  for (let attempt = 0; attempt < retries; attempt++) {
-    if (attempt > 0) await sleep(8000 * attempt); // 8s, 16s, 24s... при retry
+async function transcribeCall(call: CallRecord): Promise<void> {
+  // Шаг 1: запускаем распознавание (POST)
+  let startRes = await fetch(TRANSCRIBE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      audio_url: call.record_url,
+      comm_id: call.comm_id,
+      date: call.date,
+      duration: call.duration,
+      duration_sec: call.duration_sec,
+    }),
+  });
 
-    const res = await fetch(TRANSCRIBE_URL, {
+  // rate limit — ждём 30с и повторяем один раз
+  if (startRes.status === 429 || startRes.status === 502) {
+    await sleep(30000);
+    startRes = await fetch(TRANSCRIBE_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
@@ -41,45 +54,60 @@ async function transcribeCall(call: CallRecord, retries = 5): Promise<void> {
         duration_sec: call.duration_sec,
       }),
     });
-
-    // 429 или 502 — rate limit, ждём и повторяем
-    if (res.status === 429 || res.status === 502) {
-      if (attempt < retries - 1) {
-        await sleep(10000); // extra 10s при rate limit
-        continue;
-      }
-      throw new Error('rate_limit');
-    }
-
-    const data = await res.json();
-
-    // rate_limit пришёл в теле с 200
-    if (data.error === 'rate_limit') {
-      if (attempt < retries - 1) {
-        await sleep(10000);
-        continue;
-      }
-      throw new Error('rate_limit');
-    }
-
-    if (data.error) throw new Error(data.error);
-    if (data.status === 'pending') throw new Error('timeout');
-
-    // Если транскрипт не пустой — анализируем
-    if (data.full_text && data.replica_count > 0) {
-      const res2 = await fetch(ANALYZE_URL, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          transcript: data.full_text,
-          comm_id: call.comm_id,
-          duration_sec: call.duration_sec,
-        }),
-      });
-      await res2.json();
-    }
-    return; // успех
+    if (startRes.status === 429 || startRes.status === 502) throw new Error('rate_limit');
   }
+
+  const startData = await startRes.json();
+
+  // Вернул готовый кэш
+  if (startData.status === 'done' || startData.cached) {
+    if (startData.full_text && startData.replica_count > 0) {
+      await analyzeCall(startData.full_text, call.comm_id, call.duration_sec);
+    }
+    return;
+  }
+
+  if (startData.error === 'rate_limit') { await sleep(30000); throw new Error('rate_limit'); }
+  if (startData.error) throw new Error(startData.error);
+
+  const { operation_id } = startData;
+  if (!operation_id) throw new Error('нет operation_id');
+
+  // Шаг 2: опрашиваем каждые 5с до готовности (макс 3 мин)
+  const params = new URLSearchParams({
+    operation_id,
+    comm_id: call.comm_id,
+    audio_url: call.record_url,
+    date: call.date,
+    duration: call.duration,
+    duration_sec: String(call.duration_sec),
+  });
+
+  for (let i = 0; i < 36; i++) { // 36 × 5s = 3 мин
+    await sleep(5000);
+    const pollRes = await fetch(`${TRANSCRIBE_URL}?${params}`);
+    if (!pollRes.ok) continue;
+    const pollData = await pollRes.json();
+
+    if (pollData.status === 'done') {
+      if (pollData.full_text && pollData.replica_count > 0) {
+        await analyzeCall(pollData.full_text, call.comm_id, call.duration_sec);
+      }
+      return;
+    }
+    // status === 'processing' — продолжаем ждать
+  }
+
+  throw new Error('timeout');
+}
+
+async function analyzeCall(transcript: string, comm_id: string, duration_sec: number): Promise<void> {
+  const res = await fetch(ANALYZE_URL, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ transcript, comm_id, duration_sec }),
+  });
+  await res.json();
 }
 
 export default function TranscribingScreen({ data, onDone, onSkip }: Props) {
