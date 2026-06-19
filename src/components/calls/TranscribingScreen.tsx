@@ -7,8 +7,8 @@ const ANALYZE_URL = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-74743
 
 // Только 1 запрос — Yandex SpeechKit имеет строгий rate limit
 const CONCURRENCY = 1;
-// Задержка между запросами (мс)
-const DELAY_MS = 2000;
+// Задержка между звонками (мс) — важно для rate limit Yandex SpeechKit
+const DELAY_MS = 5000;
 
 type JobStatus = 'waiting' | 'transcribing' | 'analyzing' | 'done' | 'error' | 'skipped';
 
@@ -26,9 +26,9 @@ interface Props {
 
 const sleep = (ms: number) => new Promise(r => setTimeout(r, ms));
 
-async function transcribeCall(call: CallRecord, retries = 3): Promise<void> {
+async function transcribeCall(call: CallRecord, retries = 5): Promise<void> {
   for (let attempt = 0; attempt < retries; attempt++) {
-    if (attempt > 0) await sleep(5000 * attempt); // 5s, 10s при retry
+    if (attempt > 0) await sleep(8000 * attempt); // 8s, 16s, 24s... при retry
 
     const res = await fetch(TRANSCRIBE_URL, {
       method: 'POST',
@@ -42,13 +42,26 @@ async function transcribeCall(call: CallRecord, retries = 3): Promise<void> {
       }),
     });
 
-    // 429 — подождать и повторить
+    // 429 или 502 — rate limit, ждём и повторяем
     if (res.status === 429 || res.status === 502) {
-      if (attempt < retries - 1) continue;
+      if (attempt < retries - 1) {
+        await sleep(10000); // extra 10s при rate limit
+        continue;
+      }
       throw new Error('rate_limit');
     }
 
     const data = await res.json();
+
+    // rate_limit пришёл в теле с 200
+    if (data.error === 'rate_limit') {
+      if (attempt < retries - 1) {
+        await sleep(10000);
+        continue;
+      }
+      throw new Error('rate_limit');
+    }
+
     if (data.error) throw new Error(data.error);
     if (data.status === 'pending') throw new Error('timeout');
 

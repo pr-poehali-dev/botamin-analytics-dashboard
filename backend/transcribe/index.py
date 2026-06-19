@@ -217,7 +217,18 @@ def handler(event: dict, context) -> dict:
         }
 
     # Транскрибируем
-    operation_id = start_recognition(audio_url)
+    try:
+        operation_id = start_recognition(audio_url)
+    except urllib.error.HTTPError as e:
+        if e.code == 429:
+            return {'statusCode': 429, 'headers': cors,
+                    'body': json.dumps({'error': 'rate_limit', 'message': 'Yandex SpeechKit: превышен лимит запросов. Подождите минуту.'}, ensure_ascii=False)}
+        return {'statusCode': 500, 'headers': cors,
+                'body': json.dumps({'error': f'HTTP {e.code}: {e.reason}'}, ensure_ascii=False)}
+    except Exception as e:
+        return {'statusCode': 500, 'headers': cors,
+                'body': json.dumps({'error': str(e)}, ensure_ascii=False)}
+
     if not operation_id:
         return {'statusCode': 500, 'headers': cors,
                 'body': json.dumps({'error': 'Не удалось запустить распознавание'}, ensure_ascii=False)}
