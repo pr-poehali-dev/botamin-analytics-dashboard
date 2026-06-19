@@ -1,6 +1,9 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { type CallsData } from '@/lib/dataParser';
-import { saveSite, saveCallsData, loadSite, loadCallsData, clearSession } from '@/lib/session';
+import {
+  saveSite, saveCallsData, loadSite,
+  loadCallsDataSync, hydrateCallsData, clearSession,
+} from '@/lib/session';
 import LoginScreen from '@/components/calls/LoginScreen';
 import UploadScreen from '@/components/calls/UploadScreen';
 import TranscribingScreen from '@/components/calls/TranscribingScreen';
@@ -10,30 +13,51 @@ type Screen = 'login' | 'upload' | 'transcribing' | 'dashboard';
 
 function getInitialScreen(): Screen {
   const site = loadSite();
-  const data = loadCallsData();
+  const data = loadCallsDataSync();
   if (site && data) return 'dashboard';
-  // Если сайт есть но данных нет — показываем login (с предзаполненным полем)
-  // чтобы пользователь не видел непонятный экран загрузки файла
+  if (site) return 'login'; // сайт есть, данных нет — вход без файла
   return 'login';
 }
 
 export default function Index() {
   const [screen, setScreen]       = useState<Screen>(getInitialScreen);
   const [site, setSite]           = useState<string>(loadSite);
-  const [data, setData]           = useState<CallsData | null>(() => loadCallsData() as CallsData | null);
+  const [data, setData]           = useState<CallsData | null>(
+    () => loadCallsDataSync() as CallsData | null
+  );
   const [autoStart, setAutoStart] = useState(false);
+  const [hydrated, setHydrated]   = useState(false);
+
+  // Подгружаем calls из IndexedDB асинхронно после монтирования
+  useEffect(() => {
+    const syncedData = loadCallsDataSync();
+    if (!syncedData) { setHydrated(true); return; }
+
+    hydrateCallsData(syncedData as Record<string, unknown>).then(full => {
+      setData(full as CallsData);
+      setHydrated(true);
+    });
+  }, []);
 
   const handleLogin = (domain: string) => {
     saveSite(domain);
     setSite(domain);
-    setScreen('upload');
+    // Если данные уже есть — идём на дашборд
+    const existing = loadCallsDataSync();
+    if (existing) {
+      hydrateCallsData(existing as Record<string, unknown>).then(full => {
+        setData(full as CallsData);
+        setScreen('dashboard');
+      });
+    } else {
+      setScreen('upload');
+    }
   };
 
-  const handleLoad = (d: CallsData, auto?: boolean) => {
-    saveCallsData(d);
+  const handleLoad = async (d: CallsData, auto?: boolean) => {
+    await saveCallsData(d);
     setData(d);
     setAutoStart(!!auto);
-    // При авто-режиме пропускаем TranscribingScreen и идём сразу на Dashboard
     setScreen(auto ? 'dashboard' : 'transcribing');
   };
 
@@ -41,12 +65,17 @@ export default function Index() {
     setScreen(data ? 'dashboard' : 'login');
   };
 
-  const handleLogout = () => {
-    clearSession();
+  const handleLogout = async () => {
+    await clearSession();
     setSite('');
     setData(null);
     setScreen('login');
   };
+
+  // Пока hydration не завершилась — не показываем ничего (мгновенно)
+  if (!hydrated && screen === 'dashboard') {
+    return null;
+  }
 
   if (screen === 'login') {
     return <LoginScreen onLogin={handleLogin} />;
@@ -60,7 +89,7 @@ export default function Index() {
     return (
       <TranscribingScreen
         data={data!}
-        onDone={(d) => { saveCallsData(d); setData(d); setScreen('dashboard'); }}
+        onDone={async (d) => { await saveCallsData(d); setData(d); setScreen('dashboard'); }}
         onSkip={() => setScreen('dashboard')}
       />
     );
