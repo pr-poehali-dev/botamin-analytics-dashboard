@@ -57,6 +57,19 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
   const [transcriptionCommId, setTranscriptionCommId] = useState<string | undefined>();
   const [analyticsRefreshTick, setAnalyticsRefreshTick] = useState(0);
 
+  const HIDDEN_KEY = 'calls_hidden_ids';
+  const loadHidden = (): Set<string> => {
+    try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); } catch { return new Set(); }
+  };
+  const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHidden);
+  const hideCall = (comm_id: string) => {
+    setHiddenIds(prev => {
+      const next = new Set(prev); next.add(comm_id);
+      try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
+      return next;
+    });
+  };
+
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
   const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
 
@@ -243,14 +256,14 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
                 Полный список с фильтрацией по дате, длительности и поиском по ID
               </p>
             </div>
-            <CallsTable calls={data.calls} onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} />
+            <CallsTable calls={data.calls} hiddenIds={hiddenIds} onHideCall={hideCall} onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} />
           </div>
         )}
 
         {/* ── ТРАНСКРИБАЦИЯ ── */}
         {tab === 'transcription' && (
           <div className="animate-fade-in">
-            <TranscriptionTab key={transcriptionCommId || 'default'} calls={data.calls} initialCommId={transcriptionCommId} onAnalysisDone={() => setAnalyticsRefreshTick(t => t + 1)} />
+            <TranscriptionTab key={transcriptionCommId || 'default'} calls={data.calls} hiddenIds={hiddenIds} onHideCall={hideCall} initialCommId={transcriptionCommId} onAnalysisDone={() => setAnalyticsRefreshTick(t => t + 1)} />
           </div>
         )}
 

@@ -155,7 +155,7 @@ function TranscriptModal({ call, onClose }: { call: CallRecord; onClose: () => v
   );
 }
 
-export default function CallsTable({ calls, onGoToTranscription }: { calls: CallRecord[]; onGoToTranscription?: (commId: string) => void }) {
+export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall, onGoToTranscription }: { calls: CallRecord[]; hiddenIds?: Set<string>; onHideCall?: (id: string) => void; onGoToTranscription?: (commId: string) => void }) {
   const [search, setSearch]   = useState('');
   const [minSec, setMinSec]   = useState('');
   const [maxSec, setMaxSec]   = useState('');
@@ -211,20 +211,8 @@ export default function CallsTable({ calls, onGoToTranscription }: { calls: Call
     setInProgress(prev => { const n = new Set(prev); n.delete(call.comm_id); return n; });
   };
 
-  const HIDDEN_KEY = 'calls_hidden_ids';
-  const loadHidden = (): Set<string> => {
-    try { return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) || '[]')); } catch (_e) { return new Set(); }
-  };
-  const [hiddenIds, setHiddenIds] = useState<Set<string>>(loadHidden);
-
-  const hideCall = (comm_id: string) => {
-    setHiddenIds(prev => {
-      const next = new Set(prev);
-      next.add(comm_id);
-      try { localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next])); } catch (_e) { /* ignore */ }
-      return next;
-    });
-  };
+  const hiddenIds = hiddenIdsProp ?? new Set<string>();
+  const hideCall  = (comm_id: string) => onHideCall?.(comm_id);
 
   useEffect(() => {
     fetch(BATCH_STATUS_URL)

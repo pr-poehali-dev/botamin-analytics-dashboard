@@ -25,7 +25,7 @@ type DoneMap = Record<string, {
   ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
 }>;
 
-export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone }: { calls: CallRecord[]; initialCommId?: string; onAnalysisDone?: () => void }) {
+export default function TranscriptionTab({ calls, hiddenIds: hiddenIdsProp, onHideCall, initialCommId, onAnalysisDone }: { calls: CallRecord[]; hiddenIds?: Set<string>; onHideCall?: (id: string) => void; initialCommId?: string; onAnalysisDone?: () => void }) {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [result, setResult] = useState<TranscriptResult | null>(null);
   const [showIgnoreMenu, setShowIgnoreMenu] = useState(false);
@@ -55,20 +55,10 @@ export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone 
     });
   };
 
-  const DELETE_KEY = 'calls_hidden_ids';
-  const loadDeleted = (): Set<string> => {
-    try { return new Set(JSON.parse(localStorage.getItem(DELETE_KEY) || '[]')); } catch { return new Set(); }
-  };
-  const [deletedIds, setDeletedIds] = useState<Set<string>>(loadDeleted);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
 
   const deleteCall = (comm_id: string) => {
-    // Убираем из deletedIds
-    setDeletedIds(prev => {
-      const next = new Set(prev); next.add(comm_id);
-      try { localStorage.setItem(DELETE_KEY, JSON.stringify([...next])); } catch { /* ignore */ }
-      return next;
-    });
+    onHideCall?.(comm_id);
     // Убираем из doneMap
     setDoneMap(prev => {
       const next = { ...prev }; delete next[comm_id]; return next;
@@ -353,7 +343,7 @@ export default function TranscriptionTab({ calls, initialCommId, onAnalysisDone 
         )}
 
         <CallsList
-          calls={calls.filter(c => !deletedIds.has(c.comm_id))}
+          calls={calls.filter(c => !hiddenIdsProp?.has(c.comm_id))}
           selectedCall={selectedCall}
           result={result}
           doneMap={doneMap}
