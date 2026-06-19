@@ -8,12 +8,49 @@ import {
 import CallsList from '@/components/calls/CallsList';
 import CallTranscriptView from '@/components/calls/CallTranscriptView';
 
+const IGNORE_KEY = 'ignored_calls';
+const IGNORE_REASONS = [
+  { id: 'wrong_speakers', label: 'Перепутаны оператор и клиент', icon: 'ArrowLeftRight' },
+  { id: 'client_pitches', label: 'Клиент нас питчит (спам/продажи)', icon: 'UserX' },
+  { id: 'wrong_number',   label: 'Ошибочный номер', icon: 'PhoneOff' },
+  { id: 'test_call',      label: 'Тестовый звонок', icon: 'FlaskConical' },
+  { id: 'bad_quality',    label: 'Плохое качество записи', icon: 'VolumeX' },
+  { id: 'other',          label: 'Другое', icon: 'MoreHorizontal' },
+];
+
+type IgnoreMap = Record<string, string>; // comm_id → reason_id
+
 type DoneMap = Record<string, { replica_count: number; operator_replicas: number; client_replicas: number }>;
 
 export default function TranscriptionTab({ calls, initialCommId }: { calls: CallRecord[]; initialCommId?: string }) {
   const [selectedCall, setSelectedCall] = useState<CallRecord | null>(null);
   const [result, setResult] = useState<TranscriptResult | null>(null);
+  const [showIgnoreMenu, setShowIgnoreMenu] = useState(false);
   const LS_KEY = 'transcription_done_map';
+
+  // Игнорируемые звонки
+  const loadIgnoreMap = (): IgnoreMap => {
+    try { return JSON.parse(localStorage.getItem(IGNORE_KEY) || '{}'); } catch { return {}; }
+  };
+  const [ignoreMap, setIgnoreMap] = useState<IgnoreMap>(loadIgnoreMap);
+
+  const ignoreCall = (comm_id: string, reason_id: string) => {
+    setIgnoreMap(prev => {
+      const next = { ...prev, [comm_id]: reason_id };
+      try { localStorage.setItem(IGNORE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+    setShowIgnoreMenu(false);
+  };
+
+  const unignoreCall = (comm_id: string) => {
+    setIgnoreMap(prev => {
+      const next = { ...prev };
+      delete next[comm_id];
+      try { localStorage.setItem(IGNORE_KEY, JSON.stringify(next)); } catch { /* ignore */ }
+      return next;
+    });
+  };
 
   const loadLocalDoneMap = (): DoneMap => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (_e) { return {}; }
@@ -297,9 +334,9 @@ export default function TranscriptionTab({ calls, initialCommId }: { calls: Call
 
         {selectedCall && result && (
           <div>
-            <div className="flex items-center justify-between mb-5">
+            <div className="flex items-center justify-between mb-5 gap-3">
               <div>
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-2 flex-wrap">
                   <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
                     Звонок {selectedCall.date} · {selectedCall.duration}
                   </h3>
@@ -310,20 +347,97 @@ export default function TranscriptionTab({ calls, initialCommId }: { calls: Call
                       из кэша
                     </span>
                   )}
+                  {ignoreMap[selectedCall.comm_id] && (
+                    <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+                      style={{ background: 'rgba(255,140,0,0.12)', color: '#ff8c00' }}>
+                      <Icon name="EyeOff" size={10} />
+                      Игнорируется
+                    </span>
+                  )}
                 </div>
                 <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
                   ID: {selectedCall.comm_id} · {selectedCall.call_type}
                 </p>
               </div>
-              {selectedCall.record_url && (
-                <a href={selectedCall.record_url} target="_blank" rel="noreferrer"
-                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
-                  style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
-                  <Icon name="Play" size={12} />
-                  Слушать
-                </a>
-              )}
+              <div className="flex items-center gap-2 shrink-0">
+
+                {/* Кнопка Игнорировать */}
+                <div className="relative">
+                  {ignoreMap[selectedCall.comm_id] ? (
+                    <button
+                      onClick={() => unignoreCall(selectedCall.comm_id)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all hover:opacity-80"
+                      style={{ background: 'rgba(255,140,0,0.1)', border: '1px solid rgba(255,140,0,0.25)', color: '#ff8c00' }}>
+                      <Icon name="Eye" size={12} />
+                      Восстановить
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => setShowIgnoreMenu(v => !v)}
+                      className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-all hover:opacity-80"
+                      style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+                      <Icon name="EyeOff" size={12} />
+                      Игнорировать
+                    </button>
+                  )}
+
+                  {/* Дропдаун причин */}
+                  {showIgnoreMenu && (
+                    <div className="absolute right-0 top-full mt-1 w-64 rounded-xl overflow-hidden z-30 shadow-2xl"
+                      style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+                      <div className="px-3 py-2.5" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                        <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Причина игнорирования</p>
+                        <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>Звонок будет исключён из аналитики</p>
+                      </div>
+                      {IGNORE_REASONS.map(r => (
+                        <button key={r.id}
+                          onClick={() => ignoreCall(selectedCall.comm_id, r.id)}
+                          className="w-full flex items-center gap-2.5 px-3 py-2.5 text-left transition-colors hover:bg-white/5"
+                          style={{ borderBottom: '1px solid var(--border-subtle)' }}>
+                          <Icon name={r.icon} size={13} style={{ color: '#ff8c00', flexShrink: 0 }} />
+                          <span className="text-xs" style={{ color: 'var(--text-secondary)' }}>{r.label}</span>
+                        </button>
+                      ))}
+                      <button
+                        onClick={() => setShowIgnoreMenu(false)}
+                        className="w-full px-3 py-2 text-xs text-center transition-colors hover:bg-white/5"
+                        style={{ color: 'var(--text-muted)' }}>
+                        Отмена
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {selectedCall.record_url && (
+                  <a href={selectedCall.record_url} target="_blank" rel="noreferrer"
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+                    style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+                    <Icon name="Play" size={12} />
+                    Слушать
+                  </a>
+                )}
+              </div>
             </div>
+
+            {/* Баннер если игнорируется */}
+            {ignoreMap[selectedCall.comm_id] && (
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl mb-4"
+                style={{ background: 'rgba(255,140,0,0.06)', border: '1px solid rgba(255,140,0,0.2)' }}>
+                <Icon name="EyeOff" size={15} style={{ color: '#ff8c00', flexShrink: 0 }} />
+                <div className="flex-1">
+                  <p className="text-xs font-semibold" style={{ color: '#ff8c00' }}>Звонок исключён из аналитики</p>
+                  <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                    Причина: {IGNORE_REASONS.find(r => r.id === ignoreMap[selectedCall.comm_id])?.label || 'Другое'}
+                  </p>
+                </div>
+                <button onClick={() => unignoreCall(selectedCall.comm_id)}
+                  className="text-xs px-2 py-1 rounded-lg transition-opacity hover:opacity-70"
+                  style={{ background: 'rgba(255,140,0,0.15)', color: '#ff8c00' }}>
+                  Восстановить
+                </button>
+              </div>
+            )}
+
             <CallTranscriptView result={result} onAnalyze={handleAnalyze} />
           </div>
         )}
