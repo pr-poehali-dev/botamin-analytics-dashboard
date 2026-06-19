@@ -5,7 +5,6 @@ interface Props {
   onLogin: (site: string) => void;
 }
 
-const DEMO_SITE = 'siteactiv.ru';
 
 function normalizeSite(raw: string): string {
   return raw
@@ -70,16 +69,13 @@ export default function LoginScreen({ onLogin }: Props) {
         <form onSubmit={handleSubmit} className="space-y-3">
           <div className="flex items-center rounded-xl overflow-hidden"
             style={{ border: `1px solid ${error ? '#ff4444' : 'var(--border-default)'}`, background: 'var(--bg-elevated)' }}>
-            <span className="pl-3 pr-1 text-xs select-none" style={{ color: 'var(--text-muted)' }}>
-              https://
-            </span>
             <input
               type="text"
               value={value}
               onChange={e => { setValue(e.target.value); setError(''); }}
               placeholder="siteactiv.ru"
               autoFocus
-              className="flex-1 bg-transparent py-3 pr-3 text-sm outline-none"
+              className="flex-1 bg-transparent py-3 px-3 text-sm outline-none"
               style={{ color: 'var(--text-primary)' }}
             />
           </div>
@@ -112,17 +108,7 @@ export default function LoginScreen({ onLogin }: Props) {
           </button>
         </form>
 
-        <div className="mt-4 pt-4 border-t" style={{ borderColor: 'var(--border-subtle)' }}>
-          <p className="text-xs text-center mb-2" style={{ color: 'var(--text-muted)' }}>
-            Нет своих данных?
-          </p>
-          <button
-            onClick={() => { setValue(DEMO_SITE); setError(''); }}
-            className="w-full py-2 rounded-lg text-xs font-medium transition-opacity hover:opacity-80"
-            style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
-            Открыть демо-аккаунт (siteactiv.ru)
-          </button>
-        </div>
+
       </div>
 
       <p className="mt-6 text-xs text-center max-w-xs" style={{ color: 'var(--text-muted)' }}>
