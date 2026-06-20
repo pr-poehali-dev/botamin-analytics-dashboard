@@ -9,6 +9,7 @@ import RecommendationsBlock from '@/components/calls/RecommendationsBlock';
 import TranscriptionTab from '@/components/calls/TranscriptionTab';
 import AiInsightsTab from '@/components/calls/AiInsightsTab';
 import AutoPilot from '@/components/calls/AutoPilot';
+import ReportsManager from '@/components/calls/ReportsManager';
 
 type Tab = 'overview' | 'calls' | 'transcription' | 'ai-insights' | 'recommendations';
 
@@ -52,10 +53,16 @@ function KPI({ icon, label, value, sub, accent }: {
   );
 }
 
-export default function Dashboard({ data, site, autoStart, onReset, onLogout }: { data: CallsData; site?: string; autoStart?: boolean; onReset: () => void; onLogout?: () => void }) {
+export default function Dashboard({ data, site, autoStart, activeReportId, onSwitchReport, onReset, onLogout }: {
+  data: CallsData; site?: string; autoStart?: boolean;
+  activeReportId?: string;
+  onSwitchReport?: (data: CallsData, id: string) => void;
+  onReset: () => void; onLogout?: () => void
+}) {
   const [tab, setTab] = useState<Tab>('overview');
   const [transcriptionCommId, setTranscriptionCommId] = useState<string | undefined>();
   const [analyticsRefreshTick, setAnalyticsRefreshTick] = useState(0);
+  const [showReports, setShowReports] = useState(false);
 
   const HIDDEN_KEY = 'calls_hidden_ids';
   const loadHidden = (): Set<string> => {
@@ -99,11 +106,17 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
                 {data.total.toLocaleString('ru-RU')} звонков
               </div>
               <AutoPilot calls={data.calls} autoStart={autoStart} />
+              <button onClick={() => setShowReports(true)}
+                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
+                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+                <Icon name="FolderOpen" size={12} />
+                <span className="hidden sm:inline">Отчёты</span>
+              </button>
               <button onClick={onReset}
                 className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
-                <Icon name="RefreshCw" size={12} />
-                <span className="hidden sm:inline">Новый анализ</span>
+                <Icon name="Plus" size={12} />
+                <span className="hidden sm:inline">Новый</span>
               </button>
               {onLogout && (
                 <button onClick={onLogout}
@@ -281,6 +294,18 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
           </div>
         )}
       </main>
+
+      {showReports && (
+        <ReportsManager
+          activeId={activeReportId || ''}
+          onSelect={(d, id) => {
+            onSwitchReport?.(d, id);
+            setShowReports(false);
+          }}
+          onNewReport={() => { setShowReports(false); onReset(); }}
+          onClose={() => setShowReports(false)}
+        />
+      )}
     </div>
   );
 }
