@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { formatSec, formatTotalHours, type CallsData } from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
+import RecommendationsChat from '@/components/calls/RecommendationsChat';
 
 const AI_REC_URL = 'https://functions.poehali.dev/8a2bb5b8-5bb9-4e68-889e-b7af1fccdac6';
 
@@ -267,6 +268,23 @@ export default function RecommendationsBlock({ data }: { data: CallsData }) {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* Чат с советником */}
+      {!loading && (
+        <div>
+          <div className="flex items-center gap-2 mb-3">
+            <Icon name="Bot" size={14} style={{ color: '#ff8c00' }} />
+            <span className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+              Обсудить с советником
+            </span>
+            <span className="text-xs px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(255,140,0,0.12)', color: '#ff8c00' }}>
+              объективный ИИ
+            </span>
+          </div>
+          <RecommendationsChat recommendations={recs} />
         </div>
       )}
 

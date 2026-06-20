@@ -1,0 +1,23 @@
+{
+  "tests": [
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    },
+    {
+      "name": "Chat message",
+      "method": "POST",
+      "path": "/",
+      "body": {
+        "messages": [{"role": "user", "content": "Привет, расскажи про рекомендацию #1"}],
+        "recommendations": [],
+        "system_prompt": ""
+      },
+      "expectedStatus": 200,
+      "expectedBody": {},
+      "bodyMatcher": "partial"
+    }
+  ]
+}
