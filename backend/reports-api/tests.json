@@ -1,0 +1,18 @@
+{
+  "tests": [
+    {
+      "name": "List reports",
+      "method": "GET",
+      "path": "/?action=list&site=test",
+      "expectedStatus": 200,
+      "expectedBody": {"reports": []},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "OPTIONS preflight",
+      "method": "OPTIONS",
+      "path": "/",
+      "expectedStatus": 200
+    }
+  ]
+}
