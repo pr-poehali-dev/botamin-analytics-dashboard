@@ -290,6 +290,34 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
   const pages = Math.ceil(total / PER_PAGE);
   const slice = filtered.slice((page - 1) * PER_PAGE, page * PER_PAGE);
 
+  // Счётчики для select-опций (по всем звонкам без скрытых)
+  const visible = calls.filter(c => !hiddenIds.has(c.comm_id));
+  const cnt = {
+    withTranscript:  visible.filter(c => !!doneMap[c.comm_id]).length,
+    noTranscript:    visible.filter(c => !doneMap[c.comm_id]).length,
+    success:         visible.filter(c => doneMap[c.comm_id]?.ai?.outcome === 'success').length,
+    failure:         visible.filter(c => doneMap[c.comm_id]?.ai?.outcome === 'failure').length,
+    pending:         visible.filter(c => doneMap[c.comm_id]?.ai?.outcome === 'pending').length,
+    target:          visible.filter(c => doneMap[c.comm_id]?.ai?.call_type === 'target').length,
+    non_target:      visible.filter(c => doneMap[c.comm_id]?.ai?.call_type === 'non_target').length,
+    no_ai:           visible.filter(c => !doneMap[c.comm_id]?.ai).length,
+    scoreHigh:       visible.filter(c => { const s = doneMap[c.comm_id]?.ai?.operator_score; return s != null && s >= 8; }).length,
+    scoreMid:        visible.filter(c => { const s = doneMap[c.comm_id]?.ai?.operator_score; return s != null && s >= 5 && s <= 7; }).length,
+    scoreLow:        visible.filter(c => { const s = doneMap[c.comm_id]?.ai?.operator_score; return s != null && s <= 4; }).length,
+    scoreNone:       visible.filter(c => doneMap[c.comm_id]?.ai?.operator_score == null && !!doneMap[c.comm_id]?.ai).length,
+    interestHigh:    visible.filter(c => doneMap[c.comm_id]?.ai?.client_interest === 'high').length,
+    interestMedium:  visible.filter(c => doneMap[c.comm_id]?.ai?.client_interest === 'medium').length,
+    interestLow:     visible.filter(c => doneMap[c.comm_id]?.ai?.client_interest === 'low').length,
+    qualYes:         visible.filter(c => doneMap[c.comm_id]?.ai?.qualification === true).length,
+    qualNo:          visible.filter(c => doneMap[c.comm_id]?.ai?.qualification === false).length,
+    scriptYes:       visible.filter(c => doneMap[c.comm_id]?.ai?.operator_followed_script === true).length,
+    scriptNo:        visible.filter(c => doneMap[c.comm_id]?.ai?.operator_followed_script === false).length,
+    objYes:          visible.filter(c => doneMap[c.comm_id]?.ai?.operator_handled_objections === true).length,
+    objNo:           visible.filter(c => doneMap[c.comm_id]?.ai?.operator_handled_objections === false).length,
+    ivrYes:          visible.filter(c => !!doneMap[c.comm_id]?.has_ivr).length,
+    ivrNo:           visible.filter(c => !!doneMap[c.comm_id] && !doneMap[c.comm_id]?.has_ivr).length,
+  };
+
   return (
     <div className="space-y-4">
       {/* фильтры */}
@@ -313,12 +341,12 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: statusFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Все статусы</option>
-          <option value="success">✅ Успех</option>
-          <option value="failure">❌ Отказ</option>
-          <option value="pending">🔄 В работе</option>
-          <option value="target">🎯 Целевые</option>
-          <option value="non_target">⛔ Нецелевые</option>
-          <option value="no_ai">⚪ Без анализа</option>
+          <option value="success">✅ Успех ({cnt.success})</option>
+          <option value="failure">❌ Отказ ({cnt.failure})</option>
+          <option value="pending">🔄 В работе ({cnt.pending})</option>
+          <option value="target">🎯 Целевые ({cnt.target})</option>
+          <option value="non_target">⛔ Нецелевые ({cnt.non_target})</option>
+          <option value="no_ai">⚪ Без анализа ({cnt.no_ai})</option>
         </select>
         <select
           value={transcriptFilter}
@@ -326,8 +354,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: transcriptFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Транскрипт: все</option>
-          <option value="yes">📝 С транскриптом</option>
-          <option value="no">🔇 Без транскрипта</option>
+          <option value="yes">📝 С транскриптом ({cnt.withTranscript})</option>
+          <option value="no">🔇 Без транскрипта ({cnt.noTranscript})</option>
         </select>
         <select
           value={scoreFilter}
@@ -335,10 +363,10 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: scoreFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Оценка: все</option>
-          <option value="high">⭐ Высокая (8–10)</option>
-          <option value="mid">🟡 Средняя (5–7)</option>
-          <option value="low">🔴 Низкая (1–4)</option>
-          <option value="none">— Без оценки</option>
+          <option value="high">⭐ Высокая 8–10 ({cnt.scoreHigh})</option>
+          <option value="mid">🟡 Средняя 5–7 ({cnt.scoreMid})</option>
+          <option value="low">🔴 Низкая 1–4 ({cnt.scoreLow})</option>
+          <option value="none">— Без оценки ({cnt.scoreNone})</option>
         </select>
         <select
           value={interestFilter}
@@ -346,9 +374,9 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: interestFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Интерес клиента: все</option>
-          <option value="high">🟢 Высокий</option>
-          <option value="medium">🟡 Средний</option>
-          <option value="low">🔴 Низкий</option>
+          <option value="high">🟢 Высокий ({cnt.interestHigh})</option>
+          <option value="medium">🟡 Средний ({cnt.interestMedium})</option>
+          <option value="low">🔴 Низкий ({cnt.interestLow})</option>
         </select>
         <select
           value={qualFilter}
@@ -356,8 +384,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: qualFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Квалификация: все</option>
-          <option value="yes">✅ Квалифицирован</option>
-          <option value="no">❌ Не квалифицирован</option>
+          <option value="yes">✅ Квалифицирован ({cnt.qualYes})</option>
+          <option value="no">❌ Не квалифицирован ({cnt.qualNo})</option>
         </select>
         <select
           value={scriptFilter}
@@ -365,8 +393,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: scriptFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Скрипт: все</option>
-          <option value="yes">✅ Скрипт соблюдён</option>
-          <option value="no">❌ Скрипт нарушен</option>
+          <option value="yes">✅ Соблюдён ({cnt.scriptYes})</option>
+          <option value="no">❌ Нарушен ({cnt.scriptNo})</option>
         </select>
         <select
           value={objFilter}
@@ -374,8 +402,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: objFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">Возражения: все</option>
-          <option value="yes">✅ Отработаны</option>
-          <option value="no">❌ Не отработаны</option>
+          <option value="yes">✅ Отработаны ({cnt.objYes})</option>
+          <option value="no">❌ Не отработаны ({cnt.objNo})</option>
         </select>
         <select
           value={ivrFilter}
@@ -383,8 +411,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: ivrFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
           <option value="">IVR: все</option>
-          <option value="yes">🤖 Есть автоответчик</option>
-          <option value="no">👤 Без автоответчика</option>
+          <option value="yes">🤖 Есть автоответчик ({cnt.ivrYes})</option>
+          <option value="no">👤 Без автоответчика ({cnt.ivrNo})</option>
         </select>
         {(search || minSec || maxSec || statusFilter || transcriptFilter || scoreFilter || interestFilter || qualFilter || scriptFilter || objFilter || ivrFilter) && (
           <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setStatusFilter(''); setTranscriptFilter(''); setScoreFilter(''); setInterestFilter(''); setQualFilter(''); setScriptFilter(''); setObjFilter(''); setIvrFilter(''); setPage(1); }}
