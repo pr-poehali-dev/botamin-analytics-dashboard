@@ -108,7 +108,13 @@ export default function Index() {
   }
 
   if (screen === 'upload') {
-    return <UploadScreen onLoad={handleLoad} onCancel={handleCancelUpload} />;
+    return (
+      <UploadScreen
+        onLoad={handleLoad}
+        onCancel={handleCancelUpload}
+        onRestoreExisting={(d) => { setData(d); setScreen('dashboard'); }}
+      />
+    );
   }
 
   if (screen === 'transcribing') {

@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { loadFromUrl, loadFromFile, type CallsData } from '@/lib/dataParser';
-import { loadSite } from '@/lib/session';
+import { loadSite, rebuildFromCalls } from '@/lib/session';
 import Icon from '@/components/ui/icon';
 
 const DEMO_URL =
@@ -11,12 +11,14 @@ const AUTO_KEY = 'autopilot_on_load';
 interface Props {
   onLoad: (d: CallsData, autoStart?: boolean) => void;
   onCancel?: () => void;
+  onRestoreExisting?: (d: CallsData) => void;
 }
 
-export default function UploadScreen({ onLoad, onCancel }: Props) {
-  const [loading, setLoading] = useState(false);
-  const [error, setError]     = useState('');
-  const [drag, setDrag]       = useState(false);
+export default function UploadScreen({ onLoad, onCancel, onRestoreExisting }: Props) {
+  const [loading, setLoading]     = useState(false);
+  const [restoring, setRestoring] = useState(false);
+  const [error, setError]         = useState('');
+  const [drag, setDrag]           = useState(false);
   const [autoOn, setAutoOn]   = useState(() => {
     try { return localStorage.getItem(AUTO_KEY) === 'true'; } catch { return false; }
   });
@@ -69,22 +71,64 @@ export default function UploadScreen({ onLoad, onCancel }: Props) {
           )}
         </div>
 
-        {/* Баннер "Мы вас помним" */}
+        {/* Баннер "Мы вас помним" + кнопка восстановления */}
         {savedSite && !loading && (
-          <div className="mb-4 flex items-center gap-3 px-4 py-3 rounded-xl"
-            style={{ background: 'rgba(0,255,136,0.06)', border: '1px solid rgba(0,255,136,0.2)' }}>
-            <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
-              style={{ background: 'rgba(0,255,136,0.12)' }}>
-              <Icon name="Globe" size={15} style={{ color: 'var(--brand-green)' }} />
+          <div className="mb-4 rounded-xl overflow-hidden"
+            style={{ border: '1px solid rgba(0,255,136,0.2)' }}>
+            <div className="flex items-center gap-3 px-4 py-3"
+              style={{ background: 'rgba(0,255,136,0.06)' }}>
+              <div className="w-8 h-8 rounded-lg flex items-center justify-center shrink-0"
+                style={{ background: 'rgba(0,255,136,0.12)' }}>
+                <Icon name="Globe" size={15} style={{ color: 'var(--brand-green)' }} />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold truncate" style={{ color: 'var(--brand-green)' }}>
+                  {savedSite}
+                </p>
+                <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                  Загрузите свежий Excel-файл чтобы обновить данные
+                </p>
+              </div>
             </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-xs font-semibold truncate" style={{ color: 'var(--brand-green)' }}>
-                {savedSite}
-              </p>
-              <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-                Загрузите свежий Excel-файл чтобы обновить данные
-              </p>
-            </div>
+            {onRestoreExisting && (
+              <button
+                disabled={restoring}
+                onClick={async () => {
+                  setRestoring(true);
+                  setError('');
+                  try {
+                    const rebuilt = await rebuildFromCalls();
+                    if (rebuilt) {
+                      onRestoreExisting(rebuilt as CallsData);
+                    } else {
+                      setError('Сохранённых данных не найдено — загрузите файл');
+                    }
+                  } catch {
+                    setError('Не удалось восстановить данные');
+                  } finally {
+                    setRestoring(false);
+                  }
+                }}
+                className="w-full flex items-center justify-center gap-2 px-4 py-2.5 text-xs font-semibold transition-all hover:opacity-90 disabled:opacity-50"
+                style={{ background: 'var(--brand-green)', color: '#000' }}>
+                {restoring ? (
+                  <>
+                    <span className="flex gap-1">
+                      {[0,1,2].map(i => (
+                        <span key={i} className="w-1.5 h-1.5 rounded-full animate-pulse inline-block"
+                          style={{ background: '#000', animationDelay: `${i*0.15}s` }} />
+                      ))}
+                    </span>
+                    Открываю…
+                  </>
+                ) : (
+                  <>
+                    <Icon name="LayoutDashboard" size={13} />
+                    Открыть существующий дашборд
+                  </>
+                )}
+              </button>
+            )}
           </div>
         )}
 
