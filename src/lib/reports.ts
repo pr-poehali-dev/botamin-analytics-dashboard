@@ -158,8 +158,28 @@ export async function listReports(): Promise<Report[]> {
 /** Загрузить один отчёт по id (с полным списком звонков) */
 export async function loadReport(id: string): Promise<CallsData | null> {
   const meta  = await idbGet<Report>(STORE_REPORTS, `meta_${id}`);
-  const calls = await idbGet<CallsData['calls']>(STORE_REPORTS, `calls_${id}`);
-  if (!meta || !calls) return null;
+  if (!meta) return null;
+
+  let calls = await idbGet<CallsData['calls']>(STORE_REPORTS, `calls_${id}`);
+
+  // Фоллбек: старые данные лежат в сторе 'calls' под ключом 'calls'
+  if (!calls || calls.length === 0) {
+    try {
+      const db = await openDB();
+      calls = await new Promise((resolve, reject) => {
+        const tx  = db.transaction(STORE_CALLS, 'readonly');
+        const req = tx.objectStore(STORE_CALLS).get('calls');
+        req.onsuccess = () => resolve((req.result ?? []) as CallsData['calls']);
+        req.onerror   = () => reject(req.error);
+      });
+      // Если нашли — сохраняем в правильное место чтобы в следующий раз не искать
+      if (calls && calls.length > 0) {
+        await idbSet(STORE_REPORTS, `calls_${id}`, calls);
+      }
+    } catch { /* ignore */ }
+  }
+
+  if (!calls) return null;
   return { ...meta.aggregate, calls };
 }
 

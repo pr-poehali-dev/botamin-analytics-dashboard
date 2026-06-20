@@ -35,6 +35,7 @@ export default function ReportsManager({ onSelect, onNewReport, onClose, activeI
     if (data) {
       setActiveReportId(id);
       onSelect(data, id);
+      onClose();
     }
     setSwitching(null);
   };
