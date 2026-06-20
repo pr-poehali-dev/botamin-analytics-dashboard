@@ -152,7 +152,7 @@ export default function AiInsightsTab({ calls, onGoToTranscription, refreshTick 
   }
 
   return (
-    <div className="space-y-6 animate-fade-in">
+    <div className="space-y-6 animate-fade-in overflow-hidden">
       <AiInsightsKpi
         stats={stats}
         pendingCount={pendingCount}

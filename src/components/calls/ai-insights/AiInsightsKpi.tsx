@@ -121,8 +121,8 @@ function CallsModal({ filter, title, onClose, onGoToTranscription }: {
                       </p>
                     )}
                   </div>
-                  <div className="flex items-center gap-2 shrink-0">
-                    <span className="text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    <span className="hidden sm:inline text-xs font-mono" style={{ color: 'var(--text-muted)' }}>
                       ID {c.comm_id}
                     </span>
                     <Icon name={isOpen ? 'ChevronUp' : 'ChevronDown'} size={13} style={{ color: 'var(--text-muted)' }} />
@@ -210,7 +210,7 @@ function StatCard({ icon, label, value, sub, color, filter, filterLabel, onClick
   return (
     <div
       onClick={() => clickable && onClick!(filter!, filterLabel || label)}
-      className={`rounded-2xl p-5 transition-all ${clickable ? 'cursor-pointer hover:scale-[1.02] hover:shadow-lg' : ''}`}
+      className={`rounded-2xl p-5 transition-all ${clickable ? 'cursor-pointer hover:opacity-80' : ''}`}
       style={{
         background: 'var(--bg-card)',
         border: `1px solid ${clickable ? `${color || 'var(--border-default)'}40` : 'var(--border-default)'}`,
@@ -253,7 +253,7 @@ export default function AiInsightsKpi({
   return (
     <>
       {/* Заголовок */}
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-2">
         <div>
           <h1 className="text-base font-bold" style={{ color: 'var(--text-primary)' }}>
             Аналитика ИИ
