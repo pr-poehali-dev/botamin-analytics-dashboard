@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback } from 'react';
 import { loadFromUrl, loadFromFile, type CallsData } from '@/lib/dataParser';
-import { loadSite, rebuildFromCalls } from '@/lib/session';
+import { loadSite, rebuildFromCalls, diagStorage } from '@/lib/session';
 import Icon from '@/components/ui/icon';
 
 const DEMO_URL =
@@ -19,6 +19,7 @@ export default function UploadScreen({ onLoad, onCancel, onRestoreExisting }: Pr
   const [restoring, setRestoring] = useState(false);
   const [error, setError]         = useState('');
   const [drag, setDrag]           = useState(false);
+  const [diagInfo, setDiagInfo]   = useState('');
   const [autoOn, setAutoOn]   = useState(() => {
     try { return localStorage.getItem(AUTO_KEY) === 'true'; } catch { return false; }
   });
@@ -213,6 +214,25 @@ export default function UploadScreen({ onLoad, onCancel, onRestoreExisting }: Pr
         {error && (
           <p className="mt-4 text-sm px-4 py-2 rounded-lg"
             style={{ background: 'rgba(255,68,68,0.1)', color: '#ff6666' }}>{error}</p>
+        )}
+
+        {/* Диагностика хранилища */}
+        {error && !diagInfo && (
+          <button
+            className="mt-2 w-full text-xs px-3 py-2 rounded-lg transition-opacity hover:opacity-70"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)', border: '1px solid var(--border-default)' }}
+            onClick={async () => {
+              const info = await diagStorage();
+              setDiagInfo(info);
+            }}>
+            🔍 Диагностика хранилища
+          </button>
+        )}
+        {diagInfo && (
+          <pre className="mt-2 text-xs p-3 rounded-lg overflow-x-auto whitespace-pre-wrap"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-secondary)', border: '1px solid var(--border-default)' }}>
+            {diagInfo}
+          </pre>
         )}
 
         {!loading && (

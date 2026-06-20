@@ -174,6 +174,38 @@ export async function rebuildFromCalls(): Promise<Record<string, unknown> | null
   }
 }
 
+// Диагностика — возвращает строку с информацией о хранилищах
+export async function diagStorage(): Promise<string> {
+  const lines: string[] = [];
+
+  // localStorage
+  lines.push(`localStorage keys: ${Object.keys(localStorage).join(', ') || '(пусто)'}`);
+  lines.push(`sa_site: "${localStorage.getItem(SITE_KEY) || ''}"`);
+  const saData = localStorage.getItem(DATA_KEY);
+  if (saData) {
+    try {
+      const d = JSON.parse(saData) as Record<string, unknown>;
+      lines.push(`sa_data: total=${d.total}, calls.length=${(d.calls as unknown[])?.length ?? '?'}`);
+    } catch { lines.push('sa_data: (не парсится)'); }
+  } else {
+    lines.push('sa_data: (нет)');
+  }
+
+  // IndexedDB — список всех баз
+  try {
+    const dbs = await indexedDB.databases();
+    lines.push(`IndexedDB базы: ${dbs.map(d => `${d.name}(v${d.version})`).join(', ') || '(нет)'}`);
+  } catch { lines.push('IndexedDB.databases(): не поддерживается'); }
+
+  // Пробуем прочитать из нашей базы
+  try {
+    const calls = await idbGet<unknown[]>('calls');
+    lines.push(`IDB siteactiv/calls[key=calls]: ${calls ? `${calls.length} записей` : 'null'}`);
+  } catch (e) { lines.push(`IDB siteactiv/calls ошибка: ${e}`); }
+
+  return lines.join('\n');
+}
+
 export async function clearSession(): Promise<void> {
   localStorage.removeItem(SITE_KEY);
   localStorage.removeItem(DATA_KEY);
