@@ -15,7 +15,10 @@ const durColor = (sec: number) => {
 
 type DoneMap = Record<string, {
   replica_count: number; operator_replicas: number; client_replicas: number;
-  ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
+  ai?: {
+    outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string;
+    operator_score?: number; operator_followed_script?: boolean; operator_handled_objections?: boolean;
+  };
 }>;
 
 function TranscriptModal({ call, onClose }: { call: CallRecord; onClose: () => void }) {
@@ -159,8 +162,12 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
   const [search, setSearch]       = useState('');
   const [minSec, setMinSec]       = useState('');
   const [maxSec, setMaxSec]       = useState('');
-  const [statusFilter, setStatusFilter] = useState('');
+  const [statusFilter, setStatusFilter]         = useState('');
   const [transcriptFilter, setTranscriptFilter] = useState('');
+  const [scoreFilter, setScoreFilter]           = useState('');
+  const [interestFilter, setInterestFilter]     = useState('');
+  const [qualFilter, setQualFilter]             = useState('');
+  const [scriptFilter, setScriptFilter]         = useState('');
   const [page, setPage]           = useState(1);
   const LS_KEY = 'transcription_done_map';
   const loadLocal = (): DoneMap => {
@@ -235,14 +242,36 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
     if (maxSec && c.duration_sec > Number(maxSec)) return false;
     if (transcriptFilter === 'yes' && !doneMap[c.comm_id]) return false;
     if (transcriptFilter === 'no' && !!doneMap[c.comm_id]) return false;
+    const ai = doneMap[c.comm_id]?.ai;
     if (statusFilter) {
-      const ai = doneMap[c.comm_id]?.ai;
       if (statusFilter === 'success' && ai?.outcome !== 'success') return false;
       if (statusFilter === 'failure' && ai?.outcome !== 'failure') return false;
       if (statusFilter === 'pending' && ai?.outcome !== 'pending') return false;
       if (statusFilter === 'target' && ai?.call_type !== 'target') return false;
       if (statusFilter === 'non_target' && ai?.call_type !== 'non_target') return false;
       if (statusFilter === 'no_ai' && !!ai) return false;
+    }
+    if (scoreFilter) {
+      const s = ai?.operator_score;
+      if (scoreFilter === 'high' && (s == null || s < 8)) return false;
+      if (scoreFilter === 'mid' && (s == null || s < 5 || s > 7)) return false;
+      if (scoreFilter === 'low' && (s == null || s > 4)) return false;
+      if (scoreFilter === 'none' && s != null) return false;
+    }
+    if (interestFilter) {
+      if (interestFilter === 'high' && ai?.client_interest !== 'high') return false;
+      if (interestFilter === 'medium' && ai?.client_interest !== 'medium') return false;
+      if (interestFilter === 'low' && ai?.client_interest !== 'low') return false;
+    }
+    if (qualFilter) {
+      if (qualFilter === 'yes' && !ai?.qualification) return false;
+      if (qualFilter === 'no' && ai?.qualification !== false) return false;
+    }
+    if (scriptFilter) {
+      if (scriptFilter === 'script_yes' && !ai?.operator_followed_script) return false;
+      if (scriptFilter === 'script_no' && ai?.operator_followed_script !== false) return false;
+      if (scriptFilter === 'obj_yes' && !ai?.operator_handled_objections) return false;
+      if (scriptFilter === 'obj_no' && ai?.operator_handled_objections !== false) return false;
     }
     return true;
   });
@@ -286,22 +315,68 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           onChange={e => { setTranscriptFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: transcriptFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-          <option value="">С транскриптом и без</option>
+          <option value="">Транскрипт: все</option>
           <option value="yes">📝 С транскриптом</option>
           <option value="no">🔇 Без транскрипта</option>
         </select>
-        {(search || minSec || maxSec || statusFilter || transcriptFilter) && (
-          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setStatusFilter(''); setTranscriptFilter(''); setPage(1); }}
-            className="px-3 py-2 rounded-lg text-xs"
-            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
-            Сбросить
+        <select
+          value={scoreFilter}
+          onChange={e => { setScoreFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: scoreFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">Оценка: все</option>
+          <option value="high">⭐ Высокая (8–10)</option>
+          <option value="mid">🟡 Средняя (5–7)</option>
+          <option value="low">🔴 Низкая (1–4)</option>
+          <option value="none">— Без оценки</option>
+        </select>
+        <select
+          value={interestFilter}
+          onChange={e => { setInterestFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: interestFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">Интерес клиента: все</option>
+          <option value="high">🟢 Высокий</option>
+          <option value="medium">🟡 Средний</option>
+          <option value="low">🔴 Низкий</option>
+        </select>
+        <select
+          value={qualFilter}
+          onChange={e => { setQualFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: qualFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">Квалификация: все</option>
+          <option value="yes">✅ Квалифицирован</option>
+          <option value="no">❌ Не квалифицирован</option>
+        </select>
+        <select
+          value={scriptFilter}
+          onChange={e => { setScriptFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: scriptFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">Скрипт и возражения: все</option>
+          <option value="script_yes">✅ Скрипт соблюдён</option>
+          <option value="script_no">❌ Скрипт нарушен</option>
+          <option value="obj_yes">✅ Возражения отработаны</option>
+          <option value="obj_no">❌ Возражения не отработаны</option>
+        </select>
+        {(search || minSec || maxSec || statusFilter || transcriptFilter || scoreFilter || interestFilter || qualFilter || scriptFilter) && (
+          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setStatusFilter(''); setTranscriptFilter(''); setScoreFilter(''); setInterestFilter(''); setQualFilter(''); setScriptFilter(''); setPage(1); }}
+            className="px-3 py-2 rounded-lg text-xs font-semibold"
+            style={{ background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.2)', color: '#ff6666' }}>
+            Сбросить всё
           </button>
         )}
       </div>
 
-      <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
-        Показано {slice.length} из {total.toLocaleString('ru-RU')} звонков
-      </p>
+      <div className="flex items-center gap-3">
+        <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
+          Показано {slice.length} из {total.toLocaleString('ru-RU')} звонков
+          {total !== calls.length && (
+            <span style={{ color: 'var(--brand-green)' }}> · фильтр активен</span>
+          )}
+        </p>
+      </div>
 
       {/* таблица */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
