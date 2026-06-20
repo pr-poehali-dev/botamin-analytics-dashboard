@@ -156,10 +156,12 @@ function TranscriptModal({ call, onClose }: { call: CallRecord; onClose: () => v
 }
 
 export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall, onGoToTranscription }: { calls: CallRecord[]; hiddenIds?: Set<string>; onHideCall?: (id: string) => void; onGoToTranscription?: (commId: string) => void }) {
-  const [search, setSearch]   = useState('');
-  const [minSec, setMinSec]   = useState('');
-  const [maxSec, setMaxSec]   = useState('');
-  const [page, setPage]       = useState(1);
+  const [search, setSearch]       = useState('');
+  const [minSec, setMinSec]       = useState('');
+  const [maxSec, setMaxSec]       = useState('');
+  const [statusFilter, setStatusFilter] = useState('');
+  const [transcriptFilter, setTranscriptFilter] = useState('');
+  const [page, setPage]           = useState(1);
   const LS_KEY = 'transcription_done_map';
   const loadLocal = (): DoneMap => {
     try { return JSON.parse(localStorage.getItem(LS_KEY) || '{}'); } catch (_e) { return {}; }
@@ -231,6 +233,17 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
     if (search && !c.date.includes(search) && !c.comm_id.includes(search)) return false;
     if (minSec && c.duration_sec < Number(minSec)) return false;
     if (maxSec && c.duration_sec > Number(maxSec)) return false;
+    if (transcriptFilter === 'yes' && !doneMap[c.comm_id]) return false;
+    if (transcriptFilter === 'no' && !!doneMap[c.comm_id]) return false;
+    if (statusFilter) {
+      const ai = doneMap[c.comm_id]?.ai;
+      if (statusFilter === 'success' && ai?.outcome !== 'success') return false;
+      if (statusFilter === 'failure' && ai?.outcome !== 'failure') return false;
+      if (statusFilter === 'pending' && ai?.outcome !== 'pending') return false;
+      if (statusFilter === 'target' && ai?.call_type !== 'target') return false;
+      if (statusFilter === 'non_target' && ai?.call_type !== 'non_target') return false;
+      if (statusFilter === 'no_ai' && !!ai) return false;
+    }
     return true;
   });
 
@@ -255,8 +268,30 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           value={maxSec} onChange={e => { setMaxSec(e.target.value); setPage(1); }}
           placeholder="Макс. сек." type="number" className="w-32 px-3 py-2 rounded-lg text-sm outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
-        {(search || minSec || maxSec) && (
-          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setPage(1); }}
+        <select
+          value={statusFilter}
+          onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: statusFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">Все статусы</option>
+          <option value="success">✅ Успех</option>
+          <option value="failure">❌ Отказ</option>
+          <option value="pending">🔄 В работе</option>
+          <option value="target">🎯 Целевые</option>
+          <option value="non_target">⛔ Нецелевые</option>
+          <option value="no_ai">⚪ Без анализа</option>
+        </select>
+        <select
+          value={transcriptFilter}
+          onChange={e => { setTranscriptFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: transcriptFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">С транскриптом и без</option>
+          <option value="yes">📝 С транскриптом</option>
+          <option value="no">🔇 Без транскрипта</option>
+        </select>
+        {(search || minSec || maxSec || statusFilter || transcriptFilter) && (
+          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setStatusFilter(''); setTranscriptFilter(''); setPage(1); }}
             className="px-3 py-2 rounded-lg text-xs"
             style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
             Сбросить
