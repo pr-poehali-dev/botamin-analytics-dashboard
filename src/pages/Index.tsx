@@ -46,15 +46,17 @@ export default function Index() {
           setHydrated(true);
           return;
         }
+        // Отчёт не найден на сервере — сбрасываем ID чтобы fallback мог мигрировать данные
+        localStorage.removeItem('sa_active_report');
       }
 
-      // 2. Fallback: старый localStorage/IDB
+      // 2. Fallback: старый localStorage/IDB — мигрируем на сервер
       const syncedData = loadCallsDataSync();
       if (syncedData) {
         const full = await hydrateCallsData(syncedData as Record<string, unknown>);
         setData(full as CallsData);
-        // Мигрируем в новую систему отчётов если данные есть
-        if ((full as CallsData).total > 0 && !reportId) {
+        // Всегда мигрируем в серверную систему если данные есть
+        if ((full as CallsData).total > 0) {
           const id = await saveReport(full as CallsData);
           setActiveId(id);
         }
@@ -188,7 +190,16 @@ export default function Index() {
     setScreen('login');
   };
 
-  if (!hydrated && loadSite()) return null;
+  if (!hydrated && loadSite()) return (
+    <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
+      <div className="flex gap-1.5">
+        {[0,1,2].map(i => (
+          <div key={i} className="w-2.5 h-2.5 rounded-full animate-pulse"
+            style={{ background: 'var(--brand-green)', animationDelay: `${i * 0.2}s` }} />
+        ))}
+      </div>
+    </div>
+  );
 
   if (screen === 'login') {
     return <LoginScreen onLogin={handleLogin} />;

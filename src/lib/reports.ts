@@ -68,6 +68,63 @@ function genId(): string {
   return `r_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
 }
 
+/** Пересчитать aggregate из массива звонков */
+function rebuildAggregate(calls: CallsData['calls']): CallsData {
+  const total = calls.length;
+  let totalSec = 0;
+  const statuses: Record<string, number> = {};
+  const dayMap: Record<string, { count: number; totalSec: number }> = {};
+
+  for (const c of calls) {
+    totalSec += c.duration_sec || 0;
+    const st = c.status || 'unknown';
+    statuses[st] = (statuses[st] || 0) + 1;
+    const d = c.date?.slice(0, 10) ?? '';
+    if (d) {
+      if (!dayMap[d]) dayMap[d] = { count: 0, totalSec: 0 };
+      dayMap[d].count++;
+      dayMap[d].totalSec += c.duration_sec || 0;
+    }
+  }
+
+  // Сортировка дат как дат (dd.mm.yyyy)
+  const sortDay = (a: string, b: string) => {
+    const toMs = (s: string) => {
+      if (s.includes('.')) { const [d,m,y] = s.split('.'); return new Date(`${y}-${m}-${d}`).getTime(); }
+      return new Date(s).getTime();
+    };
+    return toMs(a) - toMs(b);
+  };
+
+  const by_day = Object.entries(dayMap)
+    .sort(([a], [b]) => sortDay(a, b))
+    .map(([date, v]) => ({ date, count: v.count, avg_sec: Math.round(v.totalSec / v.count) }));
+
+  const buckets = [
+    { label: '0–30 сек', min: 0, max: 30 },
+    { label: '30–60 сек', min: 30, max: 60 },
+    { label: '1–3 мин', min: 60, max: 180 },
+    { label: '3–5 мин', min: 180, max: 300 },
+    { label: '5–10 мин', min: 300, max: 600 },
+    { label: '10+ мин', min: 600, max: Infinity },
+  ];
+  const duration_dist = buckets.map(b => {
+    const count = calls.filter(c => { const s = c.duration_sec || 0; return s >= b.min && s < b.max; }).length;
+    return { label: b.label, count, pct: total ? Math.round(count / total * 100) : 0 };
+  });
+
+  return {
+    total,
+    avg_duration_sec: total ? Math.round(totalSec / total) : 0,
+    total_talk_sec: totalSec,
+    statuses,
+    by_day,
+    duration_dist,
+    recommendations: [],
+    calls,
+  };
+}
+
 // ── Локальный кэш в IndexedDB ────────────────────────────────────────────────
 
 const IDB_NAME = 'siteactiv';
@@ -217,9 +274,14 @@ export async function loadReport(id: string): Promise<CallsData | null> {
     });
     if (res.ok) {
       const json = await res.json();
-      const data = json.data as CallsData;
-      if (data) {
-        // Кэшируем
+      let data = json.data as CallsData;
+      if (data && data.calls) {
+        // Если aggregate пустой (старая миграция) — пересчитываем из calls
+        if (!data.total || !data.avg_duration_sec) {
+          data = rebuildAggregate(data.calls);
+          // Сохраняем пересчитанный aggregate на сервер в фоне
+          saveReport(data, json.report?.name).catch(() => {});
+        }
         await cacheSet(`data_${id}`, data);
         return data;
       }
@@ -229,24 +291,10 @@ export async function loadReport(id: string): Promise<CallsData | null> {
   // 3. Фоллбек: старые данные из IndexedDB (миграция)
   const legacyCalls = await legacyGetCalls();
   if (legacyCalls && legacyCalls.length > 0) {
-    // Синхронизируем старые данные на сервер
-    const syncedData: CallsData = {
-      total: legacyCalls.length,
-      avg_duration_sec: 0,
-      total_talk_sec: 0,
-      statuses: {},
-      by_day: [],
-      duration_dist: [],
-      recommendations: [],
-      calls: legacyCalls,
-    };
+    const syncedData = rebuildAggregate(legacyCalls);
     await cacheSet(`data_${id}`, syncedData);
-    // Пробуем залить на сервер в фоне
-    fetch(`${API_URL}?action=save`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Site': getSite() },
-      body: JSON.stringify({ id, name: 'Отчёт', total: legacyCalls.length, dateFrom: '', dateTo: '', aggregate: {}, calls: legacyCalls }),
-    }).catch(() => {});
+    // Залить на сервер в фоне с правильным aggregate
+    saveReport(syncedData).catch(() => {});
     return syncedData;
   }
 
