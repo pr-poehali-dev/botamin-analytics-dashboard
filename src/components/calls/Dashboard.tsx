@@ -112,12 +112,7 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
                 <Icon name="FolderOpen" size={12} />
                 <span className="hidden sm:inline">Отчёты</span>
               </button>
-              <button onClick={onReset}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
-                style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
-                <Icon name="Plus" size={12} />
-                <span className="hidden sm:inline">Новый</span>
-              </button>
+
               {onLogout && (
                 <button onClick={onLogout}
                   className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
