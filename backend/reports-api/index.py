@@ -122,6 +122,23 @@ def handler(event: dict, context) -> dict:
             conn.commit()
             return ok({'ok': True, 'id': report_id})
 
+        # PUT ?action=patch&id=... — обновить только aggregate (без calls)
+        if method == 'PUT' and action == 'patch':
+            report_id = params.get('id', '') or body.get('id', '')
+            if not report_id:
+                return err('id required')
+            aggregate = body.get('aggregate', {})
+            total = body.get('total', 0)
+            date_from = body.get('dateFrom', '')
+            date_to = body.get('dateTo', '')
+            cur.execute(
+                f"UPDATE {SCHEMA}.reports SET aggregate=%s, total=%s, date_from=%s, date_to=%s "
+                f"WHERE id=%s AND site=%s",
+                (json.dumps(aggregate, ensure_ascii=False), total, date_from, date_to, report_id, site)
+            )
+            conn.commit()
+            return ok({'ok': True})
+
         # PUT ?action=rename&id=... — переименовать
         if method == 'PUT' and action == 'rename':
             report_id = params.get('id', '') or body.get('id', '')

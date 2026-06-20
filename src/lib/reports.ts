@@ -261,9 +261,9 @@ export async function listReports(): Promise<Report[]> {
 
 /** Загрузить один отчёт (с полным списком звонков) */
 export async function loadReport(id: string): Promise<CallsData | null> {
-  // 1. Пробуем локальный кэш
+  // 1. Пробуем локальный кэш (только если calls есть)
   const cached = await cacheGet<CallsData>(`data_${id}`);
-  if (cached && cached.calls && cached.calls.length > 0) {
+  if (cached && cached.calls && cached.calls.length > 0 && cached.total > 0) {
     return cached;
   }
 
@@ -274,31 +274,44 @@ export async function loadReport(id: string): Promise<CallsData | null> {
     });
     if (res.ok) {
       const json = await res.json();
-      let data = json.data as CallsData;
-      if (data && data.calls) {
+      const rawData = json.data as CallsData;
+      if (rawData && rawData.calls && rawData.calls.length > 0) {
         // Если aggregate пустой (старая миграция) — пересчитываем из calls
-        if (!data.total || !data.avg_duration_sec) {
-          data = rebuildAggregate(data.calls);
-          // Сохраняем пересчитанный aggregate на сервер в фоне
-          saveReport(data, json.report?.name).catch(() => {});
+        const data = (!rawData.total || !rawData.avg_duration_sec)
+          ? rebuildAggregate(rawData.calls)
+          : rawData;
+
+        // Если пересчитали — патчим aggregate на сервере (без создания нового отчёта)
+        if (!rawData.total || !rawData.avg_duration_sec) {
+          patchAggregate(id, data).catch(() => {});
         }
+
         await cacheSet(`data_${id}`, data);
         return data;
       }
     }
   } catch { /* fall through */ }
 
-  // 3. Фоллбек: старые данные из IndexedDB (миграция)
-  const legacyCalls = await legacyGetCalls();
-  if (legacyCalls && legacyCalls.length > 0) {
-    const syncedData = rebuildAggregate(legacyCalls);
-    await cacheSet(`data_${id}`, syncedData);
-    // Залить на сервер в фоне с правильным aggregate
-    saveReport(syncedData).catch(() => {});
-    return syncedData;
-  }
-
   return null;
+}
+
+/** Обновить только aggregate существующего отчёта (без создания нового) */
+async function patchAggregate(id: string, data: CallsData): Promise<void> {
+  const { from, to } = getDateRange(data.calls);
+  const aggregate = {
+    total: data.total,
+    avg_duration_sec: data.avg_duration_sec,
+    total_talk_sec: data.total_talk_sec,
+    statuses: data.statuses,
+    by_day: data.by_day,
+    duration_dist: data.duration_dist,
+    recommendations: data.recommendations ?? [],
+  };
+  await fetch(`${API_URL}?action=patch&id=${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json', 'X-Site': getSite() },
+    body: JSON.stringify({ aggregate, total: data.total, dateFrom: from, dateTo: to }),
+  });
 }
 
 /** Удалить отчёт */

@@ -1,10 +1,6 @@
 import { useState, useEffect } from 'react';
 import { type CallsData } from '@/lib/dataParser';
-import {
-  saveSite, loadSite,
-  loadCallsDataSync, hydrateCallsData, clearSession,
-  loadAggregateFromIDB, rebuildFromCalls,
-} from '@/lib/session';
+import { saveSite, loadSite, clearSession } from '@/lib/session';
 import {
   saveReport, loadReport, listReports,
   getActiveReportId, setActiveReportId,
@@ -16,156 +12,78 @@ import Dashboard from '@/components/calls/Dashboard';
 
 type Screen = 'login' | 'upload' | 'transcribing' | 'dashboard';
 
-function getInitialScreen(): Screen {
-  const site = loadSite();
-  const data = loadCallsDataSync();
-  if (site && data) return 'dashboard';
-  if (site && getActiveReportId()) return 'dashboard'; // будет загружен в useEffect
-  return 'login';
-}
-
 export default function Index() {
-  const [screen, setScreen]         = useState<Screen>(getInitialScreen);
-  const [site, setSite]             = useState<string>(loadSite);
-  const [data, setData]             = useState<CallsData | null>(
-    () => loadCallsDataSync() as CallsData | null
-  );
-  const [activeReportId, setActiveId] = useState<string>(getActiveReportId);
-  const [autoStart, setAutoStart]   = useState(false);
-  const [hydrated, setHydrated]     = useState(false);
+  const [screen, setScreen]   = useState<Screen>('login');
+  const [site, setSite]       = useState<string>('');
+  const [data, setData]       = useState<CallsData | null>(null);
+  const [activeReportId, setActiveId] = useState<string>('');
+  const [autoStart, setAutoStart]     = useState(false);
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    (async () => {
-      // 1. Пробуем загрузить активный отчёт из новой системы
-      const reportId = getActiveReportId();
-      if (reportId) {
-        const reportData = await loadReport(reportId);
-        if (reportData) {
+    bootstrap();
+  }, []);
+
+  async function bootstrap() {
+    setLoading(true);
+    try {
+      const savedSite = loadSite();
+      if (savedSite) setSite(savedSite);
+
+      // Нет сайта — идём на логин
+      if (!savedSite) {
+        setScreen('login');
+        setLoading(false);
+        return;
+      }
+
+      // Есть активный отчёт — грузим его
+      const activeId = getActiveReportId();
+      if (activeId) {
+        const reportData = await loadReport(activeId);
+        if (reportData && reportData.calls?.length > 0) {
           setData(reportData);
+          setActiveId(activeId);
           setScreen('dashboard');
-          setHydrated(true);
+          setLoading(false);
           return;
         }
-        // Отчёт не найден на сервере — сбрасываем ID чтобы fallback мог мигрировать данные
+        // Отчёт не найден или пустой — сбрасываем
         localStorage.removeItem('sa_active_report');
       }
 
-      // 2. Fallback: старый localStorage/IDB — мигрируем на сервер
-      const syncedData = loadCallsDataSync();
-      if (syncedData) {
-        const full = await hydrateCallsData(syncedData as Record<string, unknown>);
-        setData(full as CallsData);
-        // Всегда мигрируем в серверную систему если данные есть
-        if ((full as CallsData).total > 0) {
-          const id = await saveReport(full as CallsData);
-          setActiveId(id);
-        }
-        setScreen('dashboard');
-        setHydrated(true);
-        return;
-      }
-
-      // 3. Нет localStorage — проверяем нет ли отчётов вообще
-      const site = loadSite();
-      if (!site) { setHydrated(true); return; }
-
-      const agg = await loadAggregateFromIDB();
-      if (agg) {
-        const full = await hydrateCallsData(agg);
-        const id = await saveReport(full as CallsData);
-        setActiveId(id);
-        setData(full as CallsData);
-        setScreen('dashboard');
-        setHydrated(true);
-        return;
-      }
-
-      const rebuilt = await rebuildFromCalls();
-      if (rebuilt) {
-        const id = await saveReport(rebuilt as CallsData);
-        setActiveId(id);
-        setData(rebuilt as CallsData);
-        setScreen('dashboard');
-        setHydrated(true);
-        return;
-      }
-
-      // 4. Есть отчёты но нет активного — берём последний
+      // Ищем любой отчёт на сервере
       const reports = await listReports();
       if (reports.length > 0) {
         const last = reports[0];
         const lastData = await loadReport(last.id);
-        if (lastData) {
+        if (lastData && lastData.calls?.length > 0) {
           setActiveReportId(last.id);
           setActiveId(last.id);
           setData(lastData);
           setScreen('dashboard');
-          setHydrated(true);
+          setLoading(false);
           return;
         }
       }
 
-      setHydrated(true);
-    })().catch(() => setHydrated(true));
-  }, []);
+      // Ничего не нашли — предлагаем загрузить файл
+      setScreen('upload');
+    } catch {
+      setScreen('login');
+    } finally {
+      setLoading(false);
+    }
+  }
 
   const handleLogin = async (domain: string) => {
     saveSite(domain);
     setSite(domain);
-
-    const reportId = getActiveReportId();
-    if (reportId) {
-      const reportData = await loadReport(reportId);
-      if (reportData) {
-        setData(reportData);
-        setScreen('dashboard');
-        return;
-      }
-    }
-
-    // Проверяем есть ли вообще отчёты
-    const reports = await listReports();
-    if (reports.length > 0) {
-      const last = reports[0];
-      const lastData = await loadReport(last.id);
-      if (lastData) {
-        setActiveReportId(last.id);
-        setActiveId(last.id);
-        setData(lastData);
-        setScreen('dashboard');
-        return;
-      }
-    }
-
-    // Старый fallback
-    const existing = loadCallsDataSync();
-    if (existing) {
-      const full = await hydrateCallsData(existing as Record<string, unknown>);
-      setData(full as CallsData);
-      setScreen('dashboard');
-      return;
-    }
-
-    const agg = await loadAggregateFromIDB();
-    if (agg) {
-      const full = await hydrateCallsData(agg);
-      setData(full as CallsData);
-      setScreen('dashboard');
-      return;
-    }
-
-    const rebuilt = await rebuildFromCalls();
-    if (rebuilt) {
-      setData(rebuilt as CallsData);
-      setScreen('dashboard');
-      return;
-    }
-
-    setScreen('upload');
+    // После логина запускаем bootstrap заново
+    await bootstrap();
   };
 
   const handleLoad = async (d: CallsData, auto?: boolean) => {
-    // Сохраняем как новый отчёт
     const id = await saveReport(d);
     setActiveId(id);
     setData(d);
@@ -178,10 +96,6 @@ export default function Index() {
     if (id !== '__merged__') setActiveId(id);
   };
 
-  const handleCancelUpload = () => {
-    setScreen(data ? 'dashboard' : 'login');
-  };
-
   const handleLogout = async () => {
     await clearSession();
     setSite('');
@@ -190,10 +104,11 @@ export default function Index() {
     setScreen('login');
   };
 
-  if (!hydrated && loadSite()) return (
+  // Загрузка
+  if (loading) return (
     <div className="min-h-screen flex items-center justify-center" style={{ background: 'var(--bg-primary)' }}>
       <div className="flex gap-1.5">
-        {[0,1,2].map(i => (
+        {[0, 1, 2].map(i => (
           <div key={i} className="w-2.5 h-2.5 rounded-full animate-pulse"
             style={{ background: 'var(--brand-green)', animationDelay: `${i * 0.2}s` }} />
         ))}
@@ -209,7 +124,7 @@ export default function Index() {
     return (
       <UploadScreen
         onLoad={handleLoad}
-        onCancel={handleCancelUpload}
+        onCancel={() => setScreen(data ? 'dashboard' : 'login')}
         onRestoreExisting={(d) => { setData(d); setScreen('dashboard'); }}
       />
     );
