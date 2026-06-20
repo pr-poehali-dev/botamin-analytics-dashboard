@@ -94,13 +94,21 @@ def build_analytics(calls: list) -> dict:
         by_day[day]['count'] += 1
         by_day[day]['total_sec'] += c['duration_sec']
 
+    def day_sort_key(item):
+        """Сортировка дат формата dd.mm.yyyy как дат, а не строк"""
+        day = item[0]
+        try:
+            return datetime.strptime(day, '%d.%m.%Y')
+        except ValueError:
+            return datetime.min
+
     by_day_list = [
         {
             'date': day,
             'count': v['count'],
             'avg_sec': round(v['total_sec'] / v['count']) if v['count'] else 0,
         }
-        for day, v in sorted(by_day.items())
+        for day, v in sorted(by_day.items(), key=day_sort_key)
     ]
 
     # По часам (из длительности нет времени, нет поля — пропускаем)
