@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { type CallsData } from '@/lib/dataParser';
 import {
   saveSite, saveCallsData, loadSite,
-  loadCallsDataSync, hydrateCallsData, clearSession,
+  loadCallsDataSync, hydrateCallsData, clearSession, rebuildFromCalls,
 } from '@/lib/session';
 import LoginScreen from '@/components/calls/LoginScreen';
 import UploadScreen from '@/components/calls/UploadScreen';
@@ -38,20 +38,13 @@ export default function Index() {
       return;
     }
 
-    // localStorage пуст — проверяем есть ли звонки в IndexedDB напрямую
+    // localStorage пуст — пробуем восстановить из IndexedDB напрямую
     const site = loadSite();
     if (!site) { setHydrated(true); return; }
 
-    hydrateCallsData({ total: 1, calls: [] } as Record<string, unknown>).then(full => {
-      const calls = full.calls as unknown[];
-      if (calls && calls.length > 0) {
-        const reconstructed = {
-          total: calls.length,
-          calls,
-          by_day: [],
-          duration_dist: [],
-        } as CallsData;
-        setData(reconstructed);
+    rebuildFromCalls().then(rebuilt => {
+      if (rebuilt) {
+        setData(rebuilt as CallsData);
         setScreen('dashboard');
       }
       setHydrated(true);
@@ -72,20 +65,11 @@ export default function Index() {
       return;
     }
 
-    // Синхронных данных нет — проверяем IndexedDB напрямую
+    // Синхронных данных нет — пробуем восстановить из IndexedDB
     try {
-      const stub: Record<string, unknown> = { total: 1, calls: [] };
-      const full = await hydrateCallsData(stub);
-      const calls = full.calls as unknown[];
-      if (calls && calls.length > 0) {
-        // Есть звонки в IndexedDB — восстанавливаем сессию из них
-        const reconstructed = {
-          total: calls.length,
-          calls,
-          by_day: [],
-          duration_dist: [],
-        } as CallsData;
-        setData(reconstructed);
+      const rebuilt = await rebuildFromCalls();
+      if (rebuilt) {
+        setData(rebuilt as CallsData);
         setScreen('dashboard');
         return;
       }
