@@ -27,7 +27,7 @@ export default function TranscriptionSidebar({
   const doneCount        = Object.keys(doneMap).length;
 
   return (
-    <div className="w-72 shrink-0 flex flex-col gap-3">
+    <div className="w-full sm:w-72 sm:shrink-0 flex flex-col gap-3">
 
       {/* Заголовок + прогресс */}
       <div>

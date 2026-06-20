@@ -259,7 +259,8 @@ export default function AiInsightsKpi({
             Аналитика ИИ
           </h1>
           <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            На основе {stats.total} проанализированных звонков · <span style={{ color: 'var(--text-muted)', opacity: 0.6 }}>нажмите на карточку чтобы увидеть звонки</span>
+            На основе {stats.total} звонков
+            <span className="hidden sm:inline" style={{ opacity: 0.6 }}> · нажмите на карточку чтобы увидеть звонки</span>
             {pendingCount > 0 && (
               <span style={{ color: '#ff8c00' }}> · {pendingCount} ожидают анализа</span>
             )}
@@ -284,8 +285,9 @@ export default function AiInsightsKpi({
                     style={{ background: 'var(--brand-green)', animationDelay: `${i*0.15}s` }} />
                 ))}
               </div>
-              <span className="text-xs" style={{ color: 'var(--brand-green)' }}>
-                {batchDone}/{batchTotal} · {batchCurrent}
+              <span className="text-xs truncate max-w-[120px] sm:max-w-none" style={{ color: 'var(--brand-green)' }}>
+                {batchDone}/{batchTotal}
+                <span className="hidden sm:inline"> · {batchCurrent}</span>
               </span>
               <button onClick={onStopBatch}
                 className="text-xs px-2 py-0.5 rounded"

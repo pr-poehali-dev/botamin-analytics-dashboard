@@ -25,33 +25,33 @@ export default function TranscriptionCallHeader({
   return (
     <>
       {/* Шапка */}
-      <div className="flex items-center justify-between mb-5 gap-3">
-        <div>
-          <div className="flex items-center gap-2 flex-wrap">
-            <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
-              Звонок {selectedCall.date} · {selectedCall.duration}
-            </h3>
-            {result.cached && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)' }}>
-                <Icon name="Database" size={10} />
-                из кэша
-              </span>
-            )}
-            {isIgnored && (
-              <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(255,140,0,0.12)', color: '#ff8c00' }}>
-                <Icon name="EyeOff" size={10} />
-                Игнорируется
-              </span>
-            )}
-          </div>
-          <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
-            ID: {comm_id} · {selectedCall.call_type}
-          </p>
+      <div className="mb-5">
+        {/* Инфо о звонке */}
+        <div className="flex items-start gap-2 flex-wrap mb-3">
+          <h3 className="text-sm font-bold" style={{ color: 'var(--text-primary)' }}>
+            Звонок {selectedCall.date} · {selectedCall.duration}
+          </h3>
+          {result.cached && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)' }}>
+              <Icon name="Database" size={10} />
+              из кэша
+            </span>
+          )}
+          {isIgnored && (
+            <span className="flex items-center gap-1 text-xs px-2 py-0.5 rounded-full"
+              style={{ background: 'rgba(255,140,0,0.12)', color: '#ff8c00' }}>
+              <Icon name="EyeOff" size={10} />
+              Игнорируется
+            </span>
+          )}
         </div>
+        <p className="text-xs mb-3 break-all" style={{ color: 'var(--text-muted)' }}>
+          ID: {comm_id} · {selectedCall.call_type}
+        </p>
 
-        <div className="flex items-center gap-2 shrink-0">
+        {/* Кнопки действий — горизонтальный скролл на мобиле */}
+        <div className="flex items-center gap-2 overflow-x-auto pb-0.5">
 
           {/* Кнопка Игнорировать */}
           <div className="relative">
@@ -74,7 +74,7 @@ export default function TranscriptionCallHeader({
             )}
 
             {showIgnoreMenu && (
-              <div className="absolute right-0 top-full mt-1 w-64 rounded-xl overflow-hidden z-30 shadow-2xl"
+              <div className="absolute right-0 top-full mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl overflow-hidden z-30 shadow-2xl"
                 style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
                 <div className="px-3 py-2.5" style={{ borderBottom: '1px solid var(--border-subtle)' }}>
                   <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Причина игнорирования</p>
@@ -109,7 +109,7 @@ export default function TranscriptionCallHeader({
               Удалить
             </button>
             {showDeleteConfirm && (
-              <div className="absolute right-0 top-full mt-1 w-60 rounded-xl z-30 shadow-2xl p-4 space-y-3"
+              <div className="absolute right-0 top-full mt-1 w-56 max-w-[calc(100vw-2rem)] rounded-xl z-30 shadow-2xl p-4 space-y-3"
                 style={{ background: 'var(--bg-card)', border: '1px solid rgba(255,68,68,0.3)' }}>
                 <p className="text-xs font-semibold" style={{ color: 'var(--text-primary)' }}>Удалить звонок?</p>
                 <p className="text-xs" style={{ color: 'var(--text-muted)' }}>
@@ -135,7 +135,7 @@ export default function TranscriptionCallHeader({
 
           {selectedCall.record_url && (
             <a href={selectedCall.record_url} target="_blank" rel="noreferrer"
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs"
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs shrink-0"
               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
               <Icon name="Play" size={12} />
               Слушать
