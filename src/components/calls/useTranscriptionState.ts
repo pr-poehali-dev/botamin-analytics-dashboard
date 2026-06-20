@@ -19,7 +19,11 @@ export type IgnoreMap = Record<string, string>;
 
 export type DoneMap = Record<string, {
   replica_count: number; operator_replicas: number; client_replicas: number;
-  ai?: { outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string };
+  has_ivr?: boolean;
+  ai?: {
+    outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string;
+    operator_score?: number; operator_followed_script?: boolean; operator_handled_objections?: boolean;
+  };
 }>;
 
 const LS_KEY = 'transcription_done_map';

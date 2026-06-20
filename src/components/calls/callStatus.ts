@@ -1,10 +1,13 @@
 // Статусы на основе ИИ-анализа звонка
 
 export interface AiData {
-  outcome?: string;       // success | failure | pending
-  call_type?: string;     // target | non_target
+  outcome?: string;                    // success | failure | pending
+  call_type?: string;                  // target | non_target
   qualification?: boolean;
-  client_interest?: string; // high | medium | low
+  client_interest?: string;            // high | medium | low
+  operator_score?: number;             // 1–10
+  operator_followed_script?: boolean;
+  operator_handled_objections?: boolean;
 }
 
 export interface CallAiStatus {

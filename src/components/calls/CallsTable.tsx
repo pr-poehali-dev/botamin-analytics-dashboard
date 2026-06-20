@@ -15,6 +15,7 @@ const durColor = (sec: number) => {
 
 type DoneMap = Record<string, {
   replica_count: number; operator_replicas: number; client_replicas: number;
+  has_ivr?: boolean;
   ai?: {
     outcome?: string; call_type?: string; qualification?: boolean; client_interest?: string;
     operator_score?: number; operator_followed_script?: boolean; operator_handled_objections?: boolean;
@@ -168,6 +169,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
   const [interestFilter, setInterestFilter]     = useState('');
   const [qualFilter, setQualFilter]             = useState('');
   const [scriptFilter, setScriptFilter]         = useState('');
+  const [objFilter, setObjFilter]               = useState('');
+  const [ivrFilter, setIvrFilter]               = useState('');
   const [page, setPage]           = useState(1);
   const LS_KEY = 'transcription_done_map';
   const loadLocal = (): DoneMap => {
@@ -268,10 +271,17 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
       if (qualFilter === 'no' && ai?.qualification !== false) return false;
     }
     if (scriptFilter) {
-      if (scriptFilter === 'script_yes' && !ai?.operator_followed_script) return false;
-      if (scriptFilter === 'script_no' && ai?.operator_followed_script !== false) return false;
-      if (scriptFilter === 'obj_yes' && !ai?.operator_handled_objections) return false;
-      if (scriptFilter === 'obj_no' && ai?.operator_handled_objections !== false) return false;
+      if (scriptFilter === 'yes' && !ai?.operator_followed_script) return false;
+      if (scriptFilter === 'no' && ai?.operator_followed_script !== false) return false;
+    }
+    if (objFilter) {
+      if (objFilter === 'yes' && !ai?.operator_handled_objections) return false;
+      if (objFilter === 'no' && ai?.operator_handled_objections !== false) return false;
+    }
+    if (ivrFilter) {
+      const hasIvr = !!doneMap[c.comm_id]?.has_ivr;
+      if (ivrFilter === 'yes' && !hasIvr) return false;
+      if (ivrFilter === 'no' && hasIvr) return false;
     }
     return true;
   });
@@ -354,14 +364,30 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
           onChange={e => { setScriptFilter(e.target.value); setPage(1); }}
           className="px-3 py-2 rounded-lg text-xs outline-none"
           style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: scriptFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
-          <option value="">Скрипт и возражения: все</option>
-          <option value="script_yes">✅ Скрипт соблюдён</option>
-          <option value="script_no">❌ Скрипт нарушен</option>
-          <option value="obj_yes">✅ Возражения отработаны</option>
-          <option value="obj_no">❌ Возражения не отработаны</option>
+          <option value="">Скрипт: все</option>
+          <option value="yes">✅ Скрипт соблюдён</option>
+          <option value="no">❌ Скрипт нарушен</option>
         </select>
-        {(search || minSec || maxSec || statusFilter || transcriptFilter || scoreFilter || interestFilter || qualFilter || scriptFilter) && (
-          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setStatusFilter(''); setTranscriptFilter(''); setScoreFilter(''); setInterestFilter(''); setQualFilter(''); setScriptFilter(''); setPage(1); }}
+        <select
+          value={objFilter}
+          onChange={e => { setObjFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: objFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">Возражения: все</option>
+          <option value="yes">✅ Отработаны</option>
+          <option value="no">❌ Не отработаны</option>
+        </select>
+        <select
+          value={ivrFilter}
+          onChange={e => { setIvrFilter(e.target.value); setPage(1); }}
+          className="px-3 py-2 rounded-lg text-xs outline-none"
+          style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: ivrFilter ? 'var(--text-primary)' : 'var(--text-muted)' }}>
+          <option value="">IVR: все</option>
+          <option value="yes">🤖 Есть автоответчик</option>
+          <option value="no">👤 Без автоответчика</option>
+        </select>
+        {(search || minSec || maxSec || statusFilter || transcriptFilter || scoreFilter || interestFilter || qualFilter || scriptFilter || objFilter || ivrFilter) && (
+          <button onClick={() => { setSearch(''); setMinSec(''); setMaxSec(''); setStatusFilter(''); setTranscriptFilter(''); setScoreFilter(''); setInterestFilter(''); setQualFilter(''); setScriptFilter(''); setObjFilter(''); setIvrFilter(''); setPage(1); }}
             className="px-3 py-2 rounded-lg text-xs font-semibold"
             style={{ background: 'rgba(255,68,68,0.1)', border: '1px solid rgba(255,68,68,0.2)', color: '#ff6666' }}>
             Сбросить всё
