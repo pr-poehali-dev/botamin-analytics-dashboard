@@ -30,28 +30,69 @@ export default function Index() {
   // Подгружаем calls из IndexedDB асинхронно после монтирования
   useEffect(() => {
     const syncedData = loadCallsDataSync();
-    if (!syncedData) { setHydrated(true); return; }
+    if (syncedData) {
+      hydrateCallsData(syncedData as Record<string, unknown>).then(full => {
+        setData(full as CallsData);
+        setHydrated(true);
+      });
+      return;
+    }
 
-    hydrateCallsData(syncedData as Record<string, unknown>).then(full => {
-      setData(full as CallsData);
+    // localStorage пуст — проверяем есть ли звонки в IndexedDB напрямую
+    const site = loadSite();
+    if (!site) { setHydrated(true); return; }
+
+    hydrateCallsData({ total: 1, calls: [] } as Record<string, unknown>).then(full => {
+      const calls = full.calls as unknown[];
+      if (calls && calls.length > 0) {
+        const reconstructed = {
+          total: calls.length,
+          calls,
+          by_day: [],
+          duration_dist: [],
+        } as CallsData;
+        setData(reconstructed);
+        setScreen('dashboard');
+      }
       setHydrated(true);
-    });
+    }).catch(() => setHydrated(true));
   }, []);
 
-  const handleLogin = (domain: string) => {
+  const handleLogin = async (domain: string) => {
     saveSite(domain);
     setSite(domain);
+
+    // Сначала пробуем синхронный путь (localStorage)
     const existing = loadCallsDataSync();
     if (existing) {
-      // Данные есть — идём на дашборд
       hydrateCallsData(existing as Record<string, unknown>).then(full => {
         setData(full as CallsData);
         setScreen('dashboard');
       });
-    } else {
-      // Данных нет — предлагаем загрузить файл
-      setScreen('upload');
+      return;
     }
+
+    // Синхронных данных нет — проверяем IndexedDB напрямую
+    try {
+      const stub: Record<string, unknown> = { total: 1, calls: [] };
+      const full = await hydrateCallsData(stub);
+      const calls = full.calls as unknown[];
+      if (calls && calls.length > 0) {
+        // Есть звонки в IndexedDB — восстанавливаем сессию из них
+        const reconstructed = {
+          total: calls.length,
+          calls,
+          by_day: [],
+          duration_dist: [],
+        } as CallsData;
+        setData(reconstructed);
+        setScreen('dashboard');
+        return;
+      }
+    } catch { /* ignore */ }
+
+    // Данных нет нигде — предлагаем загрузить файл
+    setScreen('upload');
   };
 
   const handleLoad = async (d: CallsData, auto?: boolean) => {
@@ -73,8 +114,8 @@ export default function Index() {
     setScreen('login');
   };
 
-  // Пока hydration не завершилась — не мигаем пустым экраном
-  if (!hydrated && screen === 'dashboard') {
+  // Пока hydration не завершилась и есть сохранённый сайт — не мигаем пустым экраном
+  if (!hydrated && loadSite()) {
     return null;
   }
 
