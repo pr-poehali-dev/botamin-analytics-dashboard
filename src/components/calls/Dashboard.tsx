@@ -158,22 +158,38 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
                 sub="часов разговоров" />
               <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
                 <div className="flex items-center gap-2 mb-3">
-                  <Icon name="CheckCircle" size={15} style={{ color: 'var(--text-muted)' }} />
-                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Типы звонков</span>
+                  <Icon name="PhoneOutgoing" size={15} style={{ color: 'var(--text-muted)' }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Направление / статус</span>
                 </div>
-                <div className="space-y-1.5">
-                  {Object.entries(data.statuses)
-                    .sort(([, a], [, b]) => b - a)
-                    .map(([status, count]) => (
-                      <div key={status} className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{status}</span>
-                        <span className="text-xs font-mono shrink-0" style={{ color: 'var(--brand-green)' }}>
-                          {count.toLocaleString('ru-RU')}
-                        </span>
-                      </div>
-                    ))
+                {/* Направление (call_type) */}
+                {(() => {
+                  const callTypes: Record<string, number> = {};
+                  for (const c of data.calls) {
+                    if (c.call_type) callTypes[c.call_type] = (callTypes[c.call_type] || 0) + 1;
                   }
-                </div>
+                  return (
+                    <div className="space-y-1.5">
+                      {Object.entries(callTypes).sort(([,a],[,b]) => b - a).map(([type, count]) => (
+                        <div key={type} className="flex items-center justify-between gap-2">
+                          <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{type}</span>
+                          <span className="text-xs font-mono shrink-0" style={{ color: 'var(--brand-green)' }}>
+                            {count.toLocaleString('ru-RU')}
+                          </span>
+                        </div>
+                      ))}
+                      <div className="pt-1.5 mt-1.5 space-y-1" style={{ borderTop: '1px solid var(--border-subtle)' }}>
+                        {Object.entries(data.statuses).sort(([,a],[,b]) => b - a).map(([st, count]) => (
+                          <div key={st} className="flex items-center justify-between gap-2">
+                            <span className="text-xs truncate" style={{ color: 'var(--text-muted)' }}>{st}</span>
+                            <span className="text-xs font-mono shrink-0" style={{ color: 'var(--text-muted)' }}>
+                              {count.toLocaleString('ru-RU')}
+                            </span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  );
+                })()}
               </div>
             </div>
 
