@@ -52,6 +52,26 @@ def handler(event: dict, context) -> dict:
     }
 
     where = conditions.get(f)
+
+    # Динамические фильтры: fail_reason:текст, success_factor:текст, score:N, phrase_client:текст, phrase_operator:текст
+    if not where:
+        if f.startswith('fail_reason:'):
+            val = f[len('fail_reason:'):].replace("'", "''")
+            where = f"a.fail_reason = '{val}'"
+        elif f.startswith('success_factor:'):
+            val = f[len('success_factor:'):].replace("'", "''")
+            where = f"a.success_factor = '{val}'"
+        elif f.startswith('score:'):
+            val = f[len('score:'):]
+            if val.isdigit():
+                where = f"a.operator_score = {int(val)}"
+        elif f.startswith('phrase_client:'):
+            val = f[len('phrase_client:'):].replace("'", "''")
+            where = f"a.key_phrases_client::text ILIKE '%{val}%'"
+        elif f.startswith('phrase_operator:'):
+            val = f[len('phrase_operator:'):].replace("'", "''")
+            where = f"a.key_phrases_operator::text ILIKE '%{val}%'"
+
     if not where:
         return {'statusCode': 400, 'headers': CORS,
                 'body': json.dumps({'error': f'Неизвестный фильтр: {f}'}, ensure_ascii=False)}

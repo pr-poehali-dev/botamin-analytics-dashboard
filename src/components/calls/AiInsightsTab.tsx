@@ -165,7 +165,7 @@ export default function AiInsightsTab({ onGoToTranscription, refreshTick }: { on
         onGoToTranscription={onGoToTranscription}
       />
       <AiInsightsCharts stats={stats} />
-      <AiInsightsOutcomes stats={stats} />
+      <AiInsightsOutcomes stats={stats} onGoToTranscription={onGoToTranscription} />
     </div>
   );
 }
