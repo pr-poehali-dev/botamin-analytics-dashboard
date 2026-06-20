@@ -3,6 +3,8 @@ import {
   PieChart, Pie, Legend,
 } from 'recharts';
 import { type AiStats, type TipProps } from './aiInsightsTypes';
+import { type CallRecord } from '@/lib/dataParser';
+import PeriodAnalysis from './PeriodAnalysis';
 
 const BarTip = ({ active, payload, label }: TipProps) => {
   if (!active || !payload?.length) return null;
@@ -20,7 +22,7 @@ const BarTip = ({ active, payload, label }: TipProps) => {
 const interestColors: Record<string, string> = { high: 'var(--brand-green)', medium: '#ff8c00', low: '#ff4444' };
 const interestLabels: Record<string, string> = { high: 'Высокий', medium: 'Средний', low: 'Низкий' };
 
-export default function AiInsightsCharts({ stats }: { stats: AiStats }) {
+export default function AiInsightsCharts({ stats, calls }: { stats: AiStats; calls: CallRecord[] }) {
   const pieData = [
     { name: 'Целевые', value: stats.call_types['target'] || 0, fill: 'var(--brand-green)' },
     { name: 'Нецелевые', value: stats.call_types['non_target'] || 0, fill: '#334155' },
@@ -103,6 +105,9 @@ export default function AiInsightsCharts({ stats }: { stats: AiStats }) {
           </div>
         </div>
       </div>
+
+      {/* Динамика звонков — все звонки с выбором периода */}
+      {calls.length > 0 && <PeriodAnalysis calls={calls} />}
 
       {/* Динамика по датам */}
       {stats.by_date.length > 1 && (

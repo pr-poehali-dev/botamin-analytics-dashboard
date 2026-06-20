@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import Icon from '@/components/ui/icon';
 import { type AiStats } from './ai-insights/aiInsightsTypes';
+import { type CallRecord } from '@/lib/dataParser';
 import AiInsightsKpi from './ai-insights/AiInsightsKpi';
 import AiInsightsCharts from './ai-insights/AiInsightsCharts';
 import AiInsightsOutcomes from './ai-insights/AiInsightsOutcomes';
@@ -9,7 +10,7 @@ const AI_STATS_URL      = 'https://functions.poehali.dev/db240be1-ed61-46d9-bcbf
 const BATCH_ANALYZE_URL = 'https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018';
 const ANALYZE_URL       = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
 
-export default function AiInsightsTab({ onGoToTranscription, refreshTick }: { onGoToTranscription?: (commId?: string) => void; refreshTick?: number }) {
+export default function AiInsightsTab({ calls, onGoToTranscription, refreshTick }: { calls?: CallRecord[]; onGoToTranscription?: (commId?: string) => void; refreshTick?: number }) {
   const [stats, setStats]         = useState<AiStats | null>(null);
   const [loading, setLoading]     = useState(true);
   const [error, setError]         = useState('');
@@ -164,7 +165,7 @@ export default function AiInsightsTab({ onGoToTranscription, refreshTick }: { on
         onRefresh={load}
         onGoToTranscription={onGoToTranscription}
       />
-      <AiInsightsCharts stats={stats} />
+      <AiInsightsCharts stats={stats} calls={calls || []} />
       <AiInsightsOutcomes stats={stats} onGoToTranscription={onGoToTranscription} />
     </div>
   );

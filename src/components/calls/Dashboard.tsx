@@ -270,7 +270,7 @@ export default function Dashboard({ data, site, autoStart, onReset, onLogout }: 
         {/* ── АНАЛИТИКА ИИ ── */}
         {tab === 'ai-insights' && (
           <div className="animate-fade-in">
-            <AiInsightsTab onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} refreshTick={analyticsRefreshTick} />
+            <AiInsightsTab calls={data.calls} onGoToTranscription={(commId) => { setTranscriptionCommId(commId); setTab('transcription'); }} refreshTick={analyticsRefreshTick} />
           </div>
         )}
 
