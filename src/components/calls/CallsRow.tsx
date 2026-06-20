@@ -18,9 +18,91 @@ export default function CallsRow({ call: c, index: i, doneMap, inProgress, onGoT
   const isPending = inProgress.has(c.comm_id);
   const aiStatus  = getAiStatus(doneMap[c.comm_id]?.ai);
 
-  return (
+  // ── Мобильная карточка ──────────────────────────────────────────────
+  const mobileCard = (
     <div
-      className="grid gap-2 px-4 py-2.5 text-xs border-b items-center group cursor-pointer transition-all hover:bg-white/5"
+      className="sm:hidden px-4 py-3 border-b cursor-pointer transition-all active:bg-white/5"
+      onClick={() => onGoToTranscription?.(c.comm_id)}
+      style={{
+        borderColor: 'var(--border-subtle)',
+        background: i % 2 === 0 ? 'transparent' : 'rgba(255,255,255,0.012)',
+      }}>
+      {/* Строка 1: дата + длительность + удалить */}
+      <div className="flex items-center justify-between mb-1.5">
+        <span className="font-mono text-xs" style={{ color: 'var(--text-secondary)' }}>{c.date}</span>
+        <div className="flex items-center gap-2">
+          <span className="font-mono text-sm font-bold" style={{ color: durColor(c.duration_sec) }}>
+            {c.duration}
+          </span>
+          <button
+            onClick={e => { e.stopPropagation(); onHide(c.comm_id); }}
+            className="w-6 h-6 flex items-center justify-center rounded"
+            style={{ color: '#ff4444' }}>
+            <Icon name="X" size={12} />
+          </button>
+        </div>
+      </div>
+
+      {/* Строка 2: статус AI + тип звонка */}
+      <div className="flex items-center gap-2 mb-1.5">
+        {aiStatus ? (
+          <span className="flex items-center gap-1 px-2 py-0.5 rounded-full text-xs"
+            style={{ background: aiStatus.bg, color: aiStatus.color }}>
+            <Icon name={aiStatus.icon} size={9} />
+            {aiStatus.label}
+          </span>
+        ) : (
+          <span className="px-2 py-0.5 rounded-full text-xs"
+            style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
+            {c.status}
+          </span>
+        )}
+        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{c.call_type}</span>
+      </div>
+
+      {/* Строка 3: ID + кнопки */}
+      <div className="flex items-center justify-between">
+        <span className="font-mono text-xs" style={{ color: 'var(--text-muted)', opacity: 0.6 }}>
+          {c.comm_id || '—'}
+        </span>
+        <div className="flex items-center gap-3" onClick={e => e.stopPropagation()}>
+          {c.record_url && (
+            <a href={c.record_url} target="_blank" rel="noreferrer"
+              className="flex items-center gap-1 text-xs"
+              style={{ color: 'var(--brand-green)' }}>
+              <Icon name="Play" size={11} />
+              Слушать
+            </a>
+          )}
+          {hasTr ? (
+            <button onClick={() => onGoToTranscription?.(c.comm_id)}
+              className="flex items-center gap-1 text-xs"
+              style={{ color: 'var(--brand-green)' }}>
+              <Icon name="FileText" size={11} />
+              Открыть
+            </button>
+          ) : isPending ? (
+            <span className="flex items-center gap-1 text-xs" style={{ color: '#ff8c00' }}>
+              <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: '#ff8c00' }} />
+              Идёт…
+            </span>
+          ) : c.record_url ? (
+            <button onClick={() => onTranscribe(c)}
+              className="flex items-center gap-1 text-xs"
+              style={{ color: 'var(--text-muted)' }}>
+              <Icon name="Mic" size={11} />
+              Транскр.
+            </button>
+          ) : null}
+        </div>
+      </div>
+    </div>
+  );
+
+  // ── Десктопная строка таблицы ────────────────────────────────────────
+  const desktopRow = (
+    <div
+      className="hidden sm:grid gap-2 px-4 py-2.5 text-xs border-b items-center group cursor-pointer transition-all hover:bg-white/5"
       onClick={() => onGoToTranscription?.(c.comm_id)}
       style={{
         gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr 32px',
@@ -84,12 +166,13 @@ export default function CallsRow({ call: c, index: i, doneMap, inProgress, onGoT
       <div className="flex justify-end" onClick={e => e.stopPropagation()}>
         <button
           onClick={() => onHide(c.comm_id)}
-          className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity hover:opacity-100"
-          style={{ color: '#ff4444' }}
-          title="Удалить строку">
+          className="w-6 h-6 flex items-center justify-center rounded opacity-0 group-hover:opacity-100 transition-opacity"
+          style={{ color: '#ff4444' }}>
           <Icon name="X" size={12} />
         </button>
       </div>
     </div>
   );
+
+  return <>{mobileCard}{desktopRow}</>;
 }

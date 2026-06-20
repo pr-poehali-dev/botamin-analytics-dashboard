@@ -87,48 +87,50 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
       <header className="sticky top-0 z-40 border-b"
         style={{ background: 'rgba(10,10,10,0.96)', borderColor: 'var(--border-default)', backdropFilter: 'blur(12px)' }}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6">
-          <div className="flex items-center justify-between h-14">
-            <div className="flex items-center gap-3">
-              <div className="w-7 h-7 rounded-md flex items-center justify-center font-black text-sm"
+          <div className="flex items-center justify-between h-12 sm:h-14">
+            <div className="flex items-center gap-2">
+              <div className="w-7 h-7 rounded-md flex items-center justify-center font-black text-sm shrink-0"
                 style={{ background: 'var(--brand-green)', color: '#000' }}>S</div>
               <span className="font-bold text-sm" style={{ color: 'var(--text-primary)' }}>СайтАктив</span>
               {site && (
-                <span className="text-xs px-2 py-0.5 rounded-full hidden sm:inline flex items-center gap-1"
+                <span className="text-xs px-2 py-0.5 rounded-full hidden sm:inline"
                   style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
                   {site}
                 </span>
               )}
             </div>
-            <div className="flex items-center gap-2">
-              <div className="px-2.5 py-1 rounded-full text-xs flex items-center gap-1.5"
+            <div className="flex items-center gap-1.5">
+              {/* Счётчик — на мобиле без текста */}
+              <div className="px-2 py-1 rounded-full text-xs flex items-center gap-1.5"
                 style={{ background: 'var(--brand-green-muted)', border: '1px solid rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
                 <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--brand-green)' }} />
-                {data.total.toLocaleString('ru-RU')} звонков
+                <span className="font-semibold">{data.total.toLocaleString('ru-RU')}</span>
+                <span className="hidden sm:inline">звонков</span>
               </div>
               <AutoPilot calls={data.calls} autoStart={autoStart} />
+              {/* На мобиле — только иконка */}
               <button onClick={() => setShowReports(true)}
-                className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
+                className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs"
                 style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
-                <Icon name="FolderOpen" size={12} />
+                <Icon name="FolderOpen" size={14} />
                 <span className="hidden sm:inline">Отчёты</span>
               </button>
-
               {onLogout && (
                 <button onClick={onLogout}
-                  className="flex items-center gap-1.5 px-2.5 py-1 rounded-lg text-xs"
+                  className="flex items-center gap-1.5 px-2 sm:px-2.5 py-1 rounded-lg text-xs"
                   style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-muted)' }}>
-                  <Icon name="LogOut" size={12} />
+                  <Icon name="LogOut" size={14} />
                   <span className="hidden sm:inline">Выйти</span>
                 </button>
               )}
             </div>
           </div>
 
-          {/* табы */}
-          <div className="flex gap-0.5 -mb-px overflow-x-auto">
+          {/* табы — на мобиле только иконка + короткий лейбл */}
+          <div className="flex gap-0 -mb-px overflow-x-auto scrollbar-none">
             {TABS.map(t => (
               <button key={t.id} onClick={() => setTab(t.id)}
-                className="flex items-center gap-1.5 px-3 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-all"
+                className="flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-2.5 text-xs font-medium border-b-2 whitespace-nowrap transition-all"
                 style={{
                   borderColor: tab === t.id ? 'var(--brand-green)' : 'transparent',
                   color: tab === t.id ? 'var(--brand-green)' : 'var(--text-muted)',

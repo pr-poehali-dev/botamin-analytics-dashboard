@@ -211,7 +211,7 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
 
       {/* таблица */}
       <div className="rounded-2xl overflow-hidden" style={{ border: '1px solid var(--border-default)' }}>
-        <div className="grid gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider"
+        <div className="hidden sm:grid gap-2 px-4 py-3 text-xs font-semibold uppercase tracking-wider"
           style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)', borderBottom: '1px solid var(--border-default)',
             gridTemplateColumns: '1.5fr 1.5fr 1.2fr 1.8fr 1.5fr 1.2fr 1.5fr 32px' }}>
           <div>Дата</div>
