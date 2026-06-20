@@ -13,6 +13,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
   onGoToTranscription?: (commId: string) => void;
 }) {
   const [search, setSearch]                         = useState('');
+  const [dateFrom, setDateFrom]                     = useState('');
+  const [dateTo, setDateTo]                         = useState('');
   const [minSec, setMinSec]                         = useState('');
   const [maxSec, setMaxSec]                         = useState('');
   const [statusFilter, setStatusFilter]             = useState('');
@@ -91,9 +93,21 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
       .catch(() => {});
   }, []);
 
+  // Конвертация dd.mm.yyyy → yyyy-mm-dd для сравнения с input[type=date]
+  const toIso = (d: string) => {
+    if (!d) return '';
+    if (d.includes('.')) { const [dd, mm, yyyy] = d.split('.'); return `${yyyy}-${mm}-${dd}`; }
+    return d.slice(0, 10);
+  };
+
   const filtered = calls.filter(c => {
     if (hiddenIds.has(c.comm_id)) return false;
     if (search && !c.date.includes(search) && !c.comm_id.includes(search)) return false;
+    if (dateFrom || dateTo) {
+      const iso = toIso(c.date);
+      if (dateFrom && iso < dateFrom) return false;
+      if (dateTo && iso > dateTo) return false;
+    }
     if (minSec && c.duration_sec < Number(minSec)) return false;
     if (maxSec && c.duration_sec > Number(maxSec)) return false;
     if (transcriptFilter === 'yes' && !doneMap[c.comm_id]) return false;
@@ -172,7 +186,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
   };
 
   const resetFilters = () => {
-    setSearch(''); setMinSec(''); setMaxSec('');
+    setSearch(''); setDateFrom(''); setDateTo('');
+    setMinSec(''); setMaxSec('');
     setStatusFilter(''); setTranscriptFilter(''); setScoreFilter('');
     setInterestFilter(''); setQualFilter(''); setScriptFilter('');
     setObjFilter(''); setIvrFilter(''); setPage(1);
@@ -186,6 +201,8 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
     <div className="space-y-4">
       <CallsFilters
         search={search}           setSearch={handleFilterChange(setSearch)}
+        dateFrom={dateFrom}       setDateFrom={handleFilterChange(setDateFrom)}
+        dateTo={dateTo}           setDateTo={handleFilterChange(setDateTo)}
         minSec={minSec}           setMinSec={handleFilterChange(setMinSec)}
         maxSec={maxSec}           setMaxSec={handleFilterChange(setMaxSec)}
         statusFilter={statusFilter}         setStatusFilter={handleFilterChange(setStatusFilter)}
