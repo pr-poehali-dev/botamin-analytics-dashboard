@@ -156,10 +156,25 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
               <KPI icon="Timer" label="Суммарное время"
                 value={formatTotalHours(data.total_talk_sec)}
                 sub="часов разговоров" />
-              <KPI icon="CheckCircle" label="Статус"
-                value={Object.keys(data.statuses)[0] ?? '—'}
-                sub={`${Object.values(data.statuses)[0] ?? 0} звонков`}
-                accent />
+              <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+                <div className="flex items-center gap-2 mb-3">
+                  <Icon name="CheckCircle" size={15} style={{ color: 'var(--text-muted)' }} />
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>Типы звонков</span>
+                </div>
+                <div className="space-y-1.5">
+                  {Object.entries(data.statuses)
+                    .sort(([, a], [, b]) => b - a)
+                    .map(([status, count]) => (
+                      <div key={status} className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-semibold truncate" style={{ color: 'var(--text-primary)' }}>{status}</span>
+                        <span className="text-xs font-mono shrink-0" style={{ color: 'var(--brand-green)' }}>
+                          {count.toLocaleString('ru-RU')}
+                        </span>
+                      </div>
+                    ))
+                  }
+                </div>
+              </div>
             </div>
 
             {/* Динамика по дням */}
