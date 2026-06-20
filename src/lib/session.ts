@@ -63,23 +63,43 @@ async function idbDel(key: string): Promise<void> {
 
 // ── Public API ─────────────────────────────────────────────────────────────
 
+// Очищает мусор Яндекс.Метрики из localStorage чтобы освободить место
+function evictYMJunk() {
+  const ymKeys = Object.keys(localStorage).filter(k =>
+    k.startsWith('_ym') || k.startsWith('_ya')
+  );
+  for (const k of ymKeys) {
+    try { localStorage.removeItem(k); } catch { /* ignore */ }
+  }
+}
+
 export async function saveCallsData(data: object): Promise<void> {
   const d = data as Record<string, unknown>;
 
-  // Агрегат без calls — в localStorage (маленький, синхронный)
-  try {
-    const aggregate = { ...d, calls: [] };
-    localStorage.setItem(DATA_KEY, JSON.stringify(aggregate));
-  } catch (e) {
-    console.warn('localStorage aggregate save failed', e);
-  }
-
-  // Полный список calls — в IndexedDB (нет лимита)
+  // Сначала всегда пишем в IndexedDB (нет лимита) — это основное хранилище
   try {
     await idbSet('calls', d.calls ?? []);
   } catch (e) {
     console.warn('IndexedDB calls save failed', e);
   }
+
+  // Также сохраняем агрегат (без calls) в IndexedDB как резерв
+  try {
+    const aggregate = { ...d, calls: [] };
+    await idbSet('aggregate', aggregate);
+  } catch { /* ignore */ }
+
+  // Пробуем localStorage — если не влезает, чистим мусор и повторяем
+  try {
+    const aggregate = { ...d, calls: [] };
+    const json = JSON.stringify(aggregate);
+    try {
+      localStorage.setItem(DATA_KEY, json);
+    } catch {
+      evictYMJunk();
+      try { localStorage.setItem(DATA_KEY, json); } catch { /* ignore — IDB уже сохранён */ }
+    }
+  } catch { /* ignore */ }
 }
 
 export function loadCallsDataSync(): object | null {
@@ -92,6 +112,15 @@ export function loadCallsDataSync(): object | null {
   } catch {
     return null;
   }
+}
+
+// Пробует загрузить агрегат из IndexedDB (резервный путь когда localStorage пуст)
+export async function loadAggregateFromIDB(): Promise<Record<string, unknown> | null> {
+  try {
+    const agg = await idbGet<Record<string, unknown>>('aggregate');
+    if (agg && agg.total) return agg;
+  } catch { /* ignore */ }
+  return null;
 }
 
 export async function hydrateCallsData(data: Record<string, unknown>): Promise<Record<string, unknown>> {

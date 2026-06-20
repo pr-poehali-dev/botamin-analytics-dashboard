@@ -2,7 +2,7 @@ import { useState, useEffect } from 'react';
 import { type CallsData } from '@/lib/dataParser';
 import {
   saveSite, saveCallsData, loadSite,
-  loadCallsDataSync, hydrateCallsData, clearSession, rebuildFromCalls,
+  loadCallsDataSync, hydrateCallsData, clearSession, rebuildFromCalls, loadAggregateFromIDB,
 } from '@/lib/session';
 import LoginScreen from '@/components/calls/LoginScreen';
 import UploadScreen from '@/components/calls/UploadScreen';
@@ -38,17 +38,28 @@ export default function Index() {
       return;
     }
 
-    // localStorage пуст — пробуем восстановить из IndexedDB напрямую
+    // localStorage пуст — пробуем восстановить из IndexedDB
     const site = loadSite();
     if (!site) { setHydrated(true); return; }
 
-    rebuildFromCalls().then(rebuilt => {
+    (async () => {
+      // Уровень 1: агрегат из IDB + звонки из IDB
+      const agg = await loadAggregateFromIDB();
+      if (agg) {
+        const full = await hydrateCallsData(agg);
+        setData(full as CallsData);
+        setScreen('dashboard');
+        setHydrated(true);
+        return;
+      }
+      // Уровень 2: пересчитываем агрегат из звонков
+      const rebuilt = await rebuildFromCalls();
       if (rebuilt) {
         setData(rebuilt as CallsData);
         setScreen('dashboard');
       }
       setHydrated(true);
-    }).catch(() => setHydrated(true));
+    })().catch(() => setHydrated(true));
   }, []);
 
   const handleLogin = async (domain: string) => {
@@ -65,8 +76,15 @@ export default function Index() {
       return;
     }
 
-    // Синхронных данных нет — пробуем восстановить из IndexedDB
+    // Синхронных данных нет — пробуем из IDB (агрегат → rebuild)
     try {
+      const agg = await loadAggregateFromIDB();
+      if (agg) {
+        const full = await hydrateCallsData(agg);
+        setData(full as CallsData);
+        setScreen('dashboard');
+        return;
+      }
       const rebuilt = await rebuildFromCalls();
       if (rebuilt) {
         setData(rebuilt as CallsData);
