@@ -81,38 +81,93 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
   const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
 
-  // AI-статистика из localStorage doneMap
+  // AI-статистика из localStorage doneMap + сравнение периодов
   const aiStats = useMemo(() => {
     try {
       const dm = JSON.parse(localStorage.getItem('transcription_done_map') || '{}');
-      let target = 0, nonTarget = 0, success = 0, failure = 0, pending = 0;
-      let qualYes = 0, qualNo = 0, scriptYes = 0, scriptNo = 0, objYes = 0, objNo = 0;
-      let totalScore = 0, scoreCount = 0;
-      let interestHigh = 0, interestMedium = 0, interestLow = 0;
-      const analyzed = Object.values(dm).filter((v: unknown) => (v as { ai?: unknown }).ai).length;
-      for (const entry of Object.values(dm) as { ai?: Record<string, unknown> }[]) {
+
+      // Строим map comm_id → iso-дата из data.calls
+      const toIso = (d: string) => {
+        if (!d) return '';
+        if (d.includes('.')) { const [dd, mm, yyyy] = d.split('.'); return `${yyyy}-${mm}-${dd}`; }
+        return d.slice(0, 10);
+      };
+      const dateByCommId: Record<string, string> = {};
+      for (const c of data.calls) dateByCommId[c.comm_id] = toIso(c.date);
+
+      // Определяем границу разделения периода пополам
+      const allDates = Object.entries(dm)
+        .filter(([, v]) => (v as { ai?: unknown }).ai)
+        .map(([id]) => dateByCommId[id] || '')
+        .filter(Boolean)
+        .sort();
+      const midDate = allDates.length > 1 ? allDates[Math.floor(allDates.length / 2)] : '';
+
+      type Acc = {
+        analyzed: number; target: number; nonTarget: number;
+        success: number; failure: number; pending: number;
+        qualYes: number; qualNo: number; scriptYes: number; scriptNo: number;
+        objYes: number; objNo: number;
+        interestHigh: number; interestMedium: number; interestLow: number;
+        totalScore: number; scoreCount: number;
+      };
+      const empty = (): Acc => ({
+        analyzed: 0, target: 0, nonTarget: 0, success: 0, failure: 0, pending: 0,
+        qualYes: 0, qualNo: 0, scriptYes: 0, scriptNo: 0, objYes: 0, objNo: 0,
+        interestHigh: 0, interestMedium: 0, interestLow: 0, totalScore: 0, scoreCount: 0,
+      });
+
+      const cur = empty(), prev = empty();
+
+      for (const [id, entry] of Object.entries(dm) as [string, { ai?: Record<string, unknown> }][]) {
         const ai = entry?.ai;
         if (!ai) continue;
-        if (ai.call_type === 'target') target++; else if (ai.call_type === 'non_target') nonTarget++;
-        if (ai.outcome === 'success') success++; else if (ai.outcome === 'failure') failure++; else if (ai.outcome === 'pending') pending++;
-        if (ai.qualification === true) qualYes++; else if (ai.qualification === false) qualNo++;
-        if (ai.operator_followed_script === true) scriptYes++; else if (ai.operator_followed_script === false) scriptNo++;
-        if (ai.operator_handled_objections === true) objYes++; else if (ai.operator_handled_objections === false) objNo++;
-        if (ai.client_interest === 'high') interestHigh++; else if (ai.client_interest === 'medium') interestMedium++; else if (ai.client_interest === 'low') interestLow++;
-        if (typeof ai.operator_score === 'number') { totalScore += ai.operator_score as number; scoreCount++; }
+        const isoDate = dateByCommId[id] || '';
+        const acc = (midDate && isoDate && isoDate < midDate) ? prev : cur;
+        acc.analyzed++;
+        if (ai.call_type === 'target') acc.target++; else if (ai.call_type === 'non_target') acc.nonTarget++;
+        if (ai.outcome === 'success') acc.success++; else if (ai.outcome === 'failure') acc.failure++; else if (ai.outcome === 'pending') acc.pending++;
+        if (ai.qualification === true) acc.qualYes++; else if (ai.qualification === false) acc.qualNo++;
+        if (ai.operator_followed_script === true) acc.scriptYes++; else if (ai.operator_followed_script === false) acc.scriptNo++;
+        if (ai.operator_handled_objections === true) acc.objYes++; else if (ai.operator_handled_objections === false) acc.objNo++;
+        if (ai.client_interest === 'high') acc.interestHigh++; else if (ai.client_interest === 'medium') acc.interestMedium++; else if (ai.client_interest === 'low') acc.interestLow++;
+        if (typeof ai.operator_score === 'number') { acc.totalScore += ai.operator_score as number; acc.scoreCount++; }
       }
+
+      const rates = (a: Acc) => ({
+        targetRate:  a.analyzed > 0 ? Math.round(a.target / a.analyzed * 100) : 0,
+        convRate:    a.analyzed > 0 ? Math.round(a.success / a.analyzed * 100) : 0,
+        qualRate:    a.analyzed > 0 ? Math.round(a.qualYes / a.analyzed * 100) : 0,
+        scriptRate:  (a.scriptYes + a.scriptNo) > 0 ? Math.round(a.scriptYes / (a.scriptYes + a.scriptNo) * 100) : 0,
+        objRate:     (a.objYes + a.objNo) > 0 ? Math.round(a.objYes / (a.objYes + a.objNo) * 100) : 0,
+        avgScore:    a.scoreCount > 0 ? +(a.totalScore / a.scoreCount).toFixed(1) : null,
+      });
+
+      const delta = (curVal: number | null, prevVal: number | null): number | null => {
+        if (curVal == null || prevVal == null || prevVal === 0) return null;
+        return Math.round((curVal - prevVal) * 10) / 10;
+      };
+
+      const c = rates(cur), p = rates(prev);
+      const total = cur.analyzed + prev.analyzed;
+
       return {
-        analyzed, target, nonTarget, success, failure, pending,
-        qualYes, qualNo, scriptYes, scriptNo, objYes, objNo,
-        interestHigh, interestMedium, interestLow,
-        avgScore: scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : null,
-        targetRate: analyzed > 0 ? Math.round(target / analyzed * 100) : 0,
-        convRate: analyzed > 0 ? Math.round(success / analyzed * 100) : 0,
-        qualRate: analyzed > 0 ? Math.round(qualYes / analyzed * 100) : 0,
-        scriptRate: (scriptYes + scriptNo) > 0 ? Math.round(scriptYes / (scriptYes + scriptNo) * 100) : 0,
+        analyzed: total,
+        ...cur,
+        avgScore: c.avgScore != null ? c.avgScore.toFixed(1) : null,
+        ...c,
+        hasPrev: prev.analyzed > 0,
+        delta: {
+          targetRate:  delta(c.targetRate, p.targetRate),
+          convRate:    delta(c.convRate, p.convRate),
+          qualRate:    delta(c.qualRate, p.qualRate),
+          scriptRate:  delta(c.scriptRate, p.scriptRate),
+          objRate:     delta(c.objRate, p.objRate),
+          avgScore:    delta(c.avgScore, p.avgScore),
+        },
       };
     } catch { return null; }
-  }, []);
+  }, [data.calls]);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)', fontFamily: "'Golos Text', sans-serif" }}>
@@ -310,47 +365,73 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
                 { name: 'Средний', value: aiStats.interestMedium, fill: '#ff8c00' },
                 { name: 'Низкий', value: aiStats.interestLow, fill: '#ff4444' },
               ];
+              const fmt = (n: number | null, unit = '%') =>
+                n == null ? null : `${n > 0 ? '+' : ''}${n}${unit}`;
               const statRows = [
-                { label: 'Проанализировано', value: aiStats.analyzed.toLocaleString('ru-RU'), icon: 'Sparkles', color: 'var(--brand-green)' },
-                { label: 'Целевые', value: `${aiStats.target.toLocaleString('ru-RU')} (${aiStats.targetRate}%)`, icon: 'Target', color: 'var(--brand-green)' },
-                { label: 'Квалифицированы', value: `${aiStats.qualYes.toLocaleString('ru-RU')} (${aiStats.qualRate}%)`, icon: 'UserCheck', color: '#60a5fa' },
-                { label: 'Конверсия (успех)', value: `${aiStats.success.toLocaleString('ru-RU')} (${aiStats.convRate}%)`, icon: 'TrendingUp', color: 'var(--brand-green)' },
-                { label: 'В работе', value: aiStats.pending.toLocaleString('ru-RU'), icon: 'Clock', color: '#ff8c00' },
-                { label: 'Скрипт соблюдён', value: `${aiStats.scriptYes.toLocaleString('ru-RU')} (${aiStats.scriptRate}%)`, icon: 'ClipboardCheck', color: '#a78bfa' },
-                { label: 'Возражения отработаны', value: aiStats.objYes.toLocaleString('ru-RU'), icon: 'ShieldCheck', color: '#34d399' },
-                { label: 'Средняя оценка оператора', value: aiStats.avgScore ? `${aiStats.avgScore} / 10` : '—', icon: 'Star', color: '#fbbf24' },
+                { label: 'Проанализировано', value: aiStats.analyzed.toLocaleString('ru-RU'), icon: 'Sparkles', color: 'var(--brand-green)', delta: null },
+                { label: 'Целевые', value: `${aiStats.target.toLocaleString('ru-RU')} (${aiStats.targetRate}%)`, icon: 'Target', color: 'var(--brand-green)', delta: aiStats.hasPrev ? fmt(aiStats.delta.targetRate) : null },
+                { label: 'Квалифицированы', value: `${aiStats.qualYes.toLocaleString('ru-RU')} (${aiStats.qualRate}%)`, icon: 'UserCheck', color: '#60a5fa', delta: aiStats.hasPrev ? fmt(aiStats.delta.qualRate) : null },
+                { label: 'Конверсия (успех)', value: `${aiStats.success.toLocaleString('ru-RU')} (${aiStats.convRate}%)`, icon: 'TrendingUp', color: 'var(--brand-green)', delta: aiStats.hasPrev ? fmt(aiStats.delta.convRate) : null },
+                { label: 'В работе', value: aiStats.pending.toLocaleString('ru-RU'), icon: 'Clock', color: '#ff8c00', delta: null },
+                { label: 'Скрипт соблюдён', value: `${aiStats.scriptYes.toLocaleString('ru-RU')} (${aiStats.scriptRate}%)`, icon: 'ClipboardCheck', color: '#a78bfa', delta: aiStats.hasPrev ? fmt(aiStats.delta.scriptRate) : null },
+                { label: 'Возражения отработаны', value: `${aiStats.objYes.toLocaleString('ru-RU')} (${aiStats.objRate}%)`, icon: 'ShieldCheck', color: '#34d399', delta: aiStats.hasPrev ? fmt(aiStats.delta.objRate) : null },
+                { label: 'Средняя оценка оператора', value: aiStats.avgScore ? `${aiStats.avgScore} / 10` : '—', icon: 'Star', color: '#fbbf24', delta: aiStats.hasPrev ? fmt(aiStats.delta.avgScore, '') : null },
               ];
               return (
                 <div className="rounded-2xl p-6 space-y-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
-                  <div className="flex items-center gap-2">
+                  <div className="flex items-center gap-2 flex-wrap">
                     <Icon name="Sparkles" size={14} style={{ color: 'var(--brand-green)' }} />
                     <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
                       Аналитика ИИ — сводка
                     </h2>
-                    <span className="text-xs px-2 py-0.5 rounded-full ml-auto"
+                    <span className="text-xs px-2 py-0.5 rounded-full"
                       style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)', border: '1px solid rgba(0,255,136,0.2)' }}>
                       {aiStats.analyzed} из {data.total} звонков
                     </span>
+                    {aiStats.hasPrev && (
+                      <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
+                        ↕ сравнение: вторая половина периода vs первая
+                      </span>
+                    )}
                   </div>
 
                   {/* KPI строка */}
-                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                    {[
-                      { label: 'Целевые', val: `${aiStats.targetRate}%`, sub: `${aiStats.target} зв.`, color: 'var(--brand-green)', icon: 'Target' },
-                      { label: 'Конверсия', val: `${aiStats.convRate}%`, sub: `${aiStats.success} успех`, color: 'var(--brand-green)', icon: 'TrendingUp' },
-                      { label: 'Квалификация', val: `${aiStats.qualRate}%`, sub: `${aiStats.qualYes} зв.`, color: '#60a5fa', icon: 'UserCheck' },
-                      { label: 'Оценка оператора', val: aiStats.avgScore ? `${aiStats.avgScore}/10` : '—', sub: 'средняя', color: '#fbbf24', icon: 'Star' },
-                    ].map((kpi, i) => (
-                      <div key={i} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-                        <div className="flex items-center gap-1.5 mb-2">
-                          <Icon name={kpi.icon} size={12} style={{ color: kpi.color }} />
-                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.label}</span>
-                        </div>
-                        <div className="text-xl font-black font-mono" style={{ color: kpi.color }}>{kpi.val}</div>
-                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{kpi.sub}</div>
+                  {(() => {
+                    const kpiList = [
+                      { label: 'Целевые', val: `${aiStats.targetRate}%`, sub: `${aiStats.target} зв.`, color: 'var(--brand-green)', icon: 'Target', d: aiStats.delta.targetRate, unit: '%' },
+                      { label: 'Конверсия', val: `${aiStats.convRate}%`, sub: `${aiStats.success} успех`, color: 'var(--brand-green)', icon: 'TrendingUp', d: aiStats.delta.convRate, unit: '%' },
+                      { label: 'Квалификация', val: `${aiStats.qualRate}%`, sub: `${aiStats.qualYes} зв.`, color: '#60a5fa', icon: 'UserCheck', d: aiStats.delta.qualRate, unit: '%' },
+                      { label: 'Оценка оператора', val: aiStats.avgScore ? `${aiStats.avgScore}/10` : '—', sub: 'средняя', color: '#fbbf24', icon: 'Star', d: aiStats.delta.avgScore, unit: '' },
+                    ];
+                    return (
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                        {kpiList.map((kpi, i) => {
+                          const d = kpi.d;
+                          const isUp   = d != null && d > 0;
+                          const isDown = d != null && d < 0;
+                          return (
+                            <div key={i} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                              <div className="flex items-center gap-1.5 mb-2">
+                                <Icon name={kpi.icon} size={12} style={{ color: kpi.color }} />
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.label}</span>
+                              </div>
+                              <div className="text-xl font-black font-mono" style={{ color: kpi.color }}>{kpi.val}</div>
+                              <div className="flex items-center gap-1.5 mt-1">
+                                <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.sub}</span>
+                                {aiStats.hasPrev && d != null && (
+                                  <span className="flex items-center gap-0.5 text-xs font-semibold"
+                                    style={{ color: isUp ? 'var(--brand-green)' : isDown ? '#ff4444' : 'var(--text-muted)' }}>
+                                    <Icon name={isUp ? 'TrendingUp' : isDown ? 'TrendingDown' : 'Minus'} size={10} />
+                                    {isUp ? '+' : ''}{d}{kpi.unit}
+                                  </span>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
                       </div>
-                    ))}
-                  </div>
+                    );
+                  })()}
 
                   {/* Три диаграммы */}
                   <div className="grid sm:grid-cols-3 gap-4">
@@ -377,16 +458,30 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
 
                   {/* Детальные показатели */}
                   <div className="grid sm:grid-cols-2 gap-2">
-                    {statRows.map((row, i) => (
-                      <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg"
-                        style={{ background: 'var(--bg-elevated)' }}>
-                        <div className="flex items-center gap-2">
-                          <Icon name={row.icon} size={12} style={{ color: row.color }} />
-                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+                    {statRows.map((row, i) => {
+                      const dNum = row.delta ? parseFloat(row.delta) : null;
+                      const isUp   = dNum != null && dNum > 0;
+                      const isDown = dNum != null && dNum < 0;
+                      return (
+                        <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg"
+                          style={{ background: 'var(--bg-elevated)' }}>
+                          <div className="flex items-center gap-2">
+                            <Icon name={row.icon} size={12} style={{ color: row.color }} />
+                            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            {row.delta && (
+                              <span className="flex items-center gap-0.5 text-xs font-semibold"
+                                style={{ color: isUp ? 'var(--brand-green)' : isDown ? '#ff4444' : 'var(--text-muted)' }}>
+                                <Icon name={isUp ? 'TrendingUp' : isDown ? 'TrendingDown' : 'Minus'} size={9} />
+                                {row.delta}
+                              </span>
+                            )}
+                            <span className="text-xs font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{row.value}</span>
+                          </div>
                         </div>
-                        <span className="text-xs font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{row.value}</span>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               );
