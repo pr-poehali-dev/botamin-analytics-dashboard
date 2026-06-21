@@ -101,14 +101,14 @@ export default function PeriodAnalysis({ calls }: Props) {
 
   const maxCount = Math.max(...days.map(d => d.count), 1);
 
-  const handleMouseDown = (e: { activeLabel?: string }) => {
-    if (!e.activeLabel) return;
+  const handleMouseDown = (e: { activeLabel?: string } | null) => {
+    if (!e || !e.activeLabel) return;
     setDragging(e.activeLabel);
     setSelStart(e.activeLabel);
     setSelEnd(e.activeLabel);
   };
-  const handleMouseMove = (e: { activeLabel?: string }) => {
-    if (!dragging || !e.activeLabel) return;
+  const handleMouseMove = (e: { activeLabel?: string } | null) => {
+    if (!e || !dragging || !e.activeLabel) return;
     setSelEnd(e.activeLabel);
   };
   const handleMouseUp = () => setDragging(null);
