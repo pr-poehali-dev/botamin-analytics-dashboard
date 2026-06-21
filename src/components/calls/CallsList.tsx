@@ -17,19 +17,26 @@ interface Props {
   onSelect: (call: CallRecord) => void;
 }
 
+const PAGE_SIZE = 100;
+
 export default function CallsList({ calls, selectedCall, result, doneMap, onSelect }: Props) {
   const [search, setSearch] = useState('');
+  const [page, setPage]     = useState(1);
 
-  const filteredCalls = calls
+  const allFiltered = calls
     .filter(c => c.record_url)
-    .filter(c => !search || c.date.includes(search) || c.comm_id.includes(search))
-    .slice(0, 200);
+    .filter(c => !search || c.date.includes(search) || c.comm_id.includes(search));
+
+  const totalPages    = Math.ceil(allFiltered.length / PAGE_SIZE);
+  const filteredCalls = allFiltered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
+
+  const handleSearch = (v: string) => { setSearch(v); setPage(1); };
 
   return (
     <>
       <input
         value={search}
-        onChange={e => setSearch(e.target.value)}
+        onChange={e => handleSearch(e.target.value)}
         placeholder="Поиск по дате или ID…"
         className="px-3 py-2 rounded-lg text-xs outline-none shrink-0"
         style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-primary)' }} />
@@ -100,6 +107,29 @@ export default function CallsList({ calls, selectedCall, result, doneMap, onSele
         })}
         {filteredCalls.length === 0 && (
           <p className="text-xs text-center py-8" style={{ color: 'var(--text-muted)' }}>Нет звонков с записью</p>
+        )}
+
+        {/* Пагинация */}
+        {totalPages > 1 && (
+          <div className="flex items-center justify-between pt-2 pb-1 shrink-0">
+            <button
+              onClick={() => setPage(p => Math.max(1, p - 1))}
+              disabled={page === 1}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+              ← Назад
+            </button>
+            <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+              {page} / {totalPages} · {allFiltered.length} звонков
+            </span>
+            <button
+              onClick={() => setPage(p => Math.min(totalPages, p + 1))}
+              disabled={page === totalPages}
+              className="px-3 py-1.5 rounded-lg text-xs font-medium disabled:opacity-30"
+              style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
+              Вперёд →
+            </button>
+          </div>
         )}
       </div>
     </>
