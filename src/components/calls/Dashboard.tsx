@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import { useState, useMemo } from 'react';
 import { formatSec, formatTotalHours, type CallsData } from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
+  PieChart, Pie, Legend,
 } from 'recharts';
 import CallsTable from '@/components/calls/CallsTable';
 import RecommendationsBlock from '@/components/calls/RecommendationsBlock';
@@ -79,6 +80,39 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
 
   const maxDay = Math.max(...data.by_day.map(d => d.count), 1);
   const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
+
+  // AI-статистика из localStorage doneMap
+  const aiStats = useMemo(() => {
+    try {
+      const dm = JSON.parse(localStorage.getItem('transcription_done_map') || '{}');
+      let target = 0, nonTarget = 0, success = 0, failure = 0, pending = 0;
+      let qualYes = 0, qualNo = 0, scriptYes = 0, scriptNo = 0, objYes = 0, objNo = 0;
+      let totalScore = 0, scoreCount = 0;
+      let interestHigh = 0, interestMedium = 0, interestLow = 0;
+      const analyzed = Object.values(dm).filter((v: unknown) => (v as { ai?: unknown }).ai).length;
+      for (const entry of Object.values(dm) as { ai?: Record<string, unknown> }[]) {
+        const ai = entry?.ai;
+        if (!ai) continue;
+        if (ai.call_type === 'target') target++; else if (ai.call_type === 'non_target') nonTarget++;
+        if (ai.outcome === 'success') success++; else if (ai.outcome === 'failure') failure++; else if (ai.outcome === 'pending') pending++;
+        if (ai.qualification === true) qualYes++; else if (ai.qualification === false) qualNo++;
+        if (ai.operator_followed_script === true) scriptYes++; else if (ai.operator_followed_script === false) scriptNo++;
+        if (ai.operator_handled_objections === true) objYes++; else if (ai.operator_handled_objections === false) objNo++;
+        if (ai.client_interest === 'high') interestHigh++; else if (ai.client_interest === 'medium') interestMedium++; else if (ai.client_interest === 'low') interestLow++;
+        if (typeof ai.operator_score === 'number') { totalScore += ai.operator_score as number; scoreCount++; }
+      }
+      return {
+        analyzed, target, nonTarget, success, failure, pending,
+        qualYes, qualNo, scriptYes, scriptNo, objYes, objNo,
+        interestHigh, interestMedium, interestLow,
+        avgScore: scoreCount > 0 ? (totalScore / scoreCount).toFixed(1) : null,
+        targetRate: analyzed > 0 ? Math.round(target / analyzed * 100) : 0,
+        convRate: analyzed > 0 ? Math.round(success / analyzed * 100) : 0,
+        qualRate: analyzed > 0 ? Math.round(qualYes / analyzed * 100) : 0,
+        scriptRate: (scriptYes + scriptNo) > 0 ? Math.round(scriptYes / (scriptYes + scriptNo) * 100) : 0,
+      };
+    } catch { return null; }
+  }, []);
 
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)', fontFamily: "'Golos Text', sans-serif" }}>
@@ -259,6 +293,104 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
                 </div>
               </div>
             </div>
+
+            {/* ── AI-статусы ── */}
+            {aiStats && aiStats.analyzed > 0 && (() => {
+              const typePie = [
+                { name: 'Целевые', value: aiStats.target, fill: 'var(--brand-green)' },
+                { name: 'Нецелевые', value: aiStats.nonTarget, fill: '#334155' },
+              ];
+              const outcomePie = [
+                { name: 'Успех', value: aiStats.success, fill: 'var(--brand-green)' },
+                { name: 'Отказ', value: aiStats.failure, fill: '#ff4444' },
+                { name: 'В работе', value: aiStats.pending, fill: '#ff8c00' },
+              ];
+              const interestPie = [
+                { name: 'Высокий', value: aiStats.interestHigh, fill: 'var(--brand-green)' },
+                { name: 'Средний', value: aiStats.interestMedium, fill: '#ff8c00' },
+                { name: 'Низкий', value: aiStats.interestLow, fill: '#ff4444' },
+              ];
+              const statRows = [
+                { label: 'Проанализировано', value: aiStats.analyzed.toLocaleString('ru-RU'), icon: 'Sparkles', color: 'var(--brand-green)' },
+                { label: 'Целевые', value: `${aiStats.target.toLocaleString('ru-RU')} (${aiStats.targetRate}%)`, icon: 'Target', color: 'var(--brand-green)' },
+                { label: 'Квалифицированы', value: `${aiStats.qualYes.toLocaleString('ru-RU')} (${aiStats.qualRate}%)`, icon: 'UserCheck', color: '#60a5fa' },
+                { label: 'Конверсия (успех)', value: `${aiStats.success.toLocaleString('ru-RU')} (${aiStats.convRate}%)`, icon: 'TrendingUp', color: 'var(--brand-green)' },
+                { label: 'В работе', value: aiStats.pending.toLocaleString('ru-RU'), icon: 'Clock', color: '#ff8c00' },
+                { label: 'Скрипт соблюдён', value: `${aiStats.scriptYes.toLocaleString('ru-RU')} (${aiStats.scriptRate}%)`, icon: 'ClipboardCheck', color: '#a78bfa' },
+                { label: 'Возражения отработаны', value: aiStats.objYes.toLocaleString('ru-RU'), icon: 'ShieldCheck', color: '#34d399' },
+                { label: 'Средняя оценка оператора', value: aiStats.avgScore ? `${aiStats.avgScore} / 10` : '—', icon: 'Star', color: '#fbbf24' },
+              ];
+              return (
+                <div className="rounded-2xl p-6 space-y-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+                  <div className="flex items-center gap-2">
+                    <Icon name="Sparkles" size={14} style={{ color: 'var(--brand-green)' }} />
+                    <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                      Аналитика ИИ — сводка
+                    </h2>
+                    <span className="text-xs px-2 py-0.5 rounded-full ml-auto"
+                      style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)', border: '1px solid rgba(0,255,136,0.2)' }}>
+                      {aiStats.analyzed} из {data.total} звонков
+                    </span>
+                  </div>
+
+                  {/* KPI строка */}
+                  <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                    {[
+                      { label: 'Целевые', val: `${aiStats.targetRate}%`, sub: `${aiStats.target} зв.`, color: 'var(--brand-green)', icon: 'Target' },
+                      { label: 'Конверсия', val: `${aiStats.convRate}%`, sub: `${aiStats.success} успех`, color: 'var(--brand-green)', icon: 'TrendingUp' },
+                      { label: 'Квалификация', val: `${aiStats.qualRate}%`, sub: `${aiStats.qualYes} зв.`, color: '#60a5fa', icon: 'UserCheck' },
+                      { label: 'Оценка оператора', val: aiStats.avgScore ? `${aiStats.avgScore}/10` : '—', sub: 'средняя', color: '#fbbf24', icon: 'Star' },
+                    ].map((kpi, i) => (
+                      <div key={i} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                        <div className="flex items-center gap-1.5 mb-2">
+                          <Icon name={kpi.icon} size={12} style={{ color: kpi.color }} />
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.label}</span>
+                        </div>
+                        <div className="text-xl font-black font-mono" style={{ color: kpi.color }}>{kpi.val}</div>
+                        <div className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>{kpi.sub}</div>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Три диаграммы */}
+                  <div className="grid sm:grid-cols-3 gap-4">
+                    {[
+                      { title: 'Типы звонков', data: typePie },
+                      { title: 'Итоги звонков', data: outcomePie },
+                      { title: 'Интерес клиентов', data: interestPie },
+                    ].map((chart, ci) => (
+                      <div key={ci} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                        <p className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{chart.title}</p>
+                        <ResponsiveContainer width="100%" height={130}>
+                          <PieChart>
+                            <Pie data={chart.data} cx="50%" cy="50%" innerRadius={30} outerRadius={48}
+                              dataKey="value" paddingAngle={3}>
+                              {chart.data.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
+                            </Pie>
+                            <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} />
+                            <Tooltip formatter={(v) => [v, '']} />
+                          </PieChart>
+                        </ResponsiveContainer>
+                      </div>
+                    ))}
+                  </div>
+
+                  {/* Детальные показатели */}
+                  <div className="grid sm:grid-cols-2 gap-2">
+                    {statRows.map((row, i) => (
+                      <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg"
+                        style={{ background: 'var(--bg-elevated)' }}>
+                        <div className="flex items-center gap-2">
+                          <Icon name={row.icon} size={12} style={{ color: row.color }} />
+                          <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
+                        </div>
+                        <span className="text-xs font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{row.value}</span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* Сводная таблица */}
             <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
