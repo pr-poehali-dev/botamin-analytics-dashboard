@@ -94,7 +94,13 @@ export function useTranscriptionState({
     fetch(BATCH_STATUS_URL)
       .then(r => r.json())
       .then(d => {
-        if (d.done) setDoneMap(prev => ({ ...prev, ...d.done }));
+        if (d.done) setDoneMap(prev => {
+          const merged = { ...prev };
+          for (const [id, val] of Object.entries(d.done)) {
+            merged[id] = val as DoneMap[string];
+          }
+          return merged;
+        });
       })
       .catch(() => {});
   }, []);

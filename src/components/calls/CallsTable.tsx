@@ -86,8 +86,16 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
       .then(r => r.json())
       .then(d => {
         if (d.done) {
-          setDoneMap(prev => ({ ...prev, ...d.done }));
-          try { localStorage.setItem(LS_KEY, JSON.stringify({ ...loadLocal(), ...d.done })); } catch (_e) { /* ignore */ }
+          // Сервер побеждает localStorage — мёрджим так чтобы серверные данные (с ai) перезаписывали локальные
+          setDoneMap(prev => {
+            const merged = { ...prev };
+            for (const [id, val] of Object.entries(d.done)) {
+              // Если серверная запись содержит ai — всегда берём её целиком
+              merged[id] = val as DoneMap[string];
+            }
+            try { localStorage.setItem(LS_KEY, JSON.stringify(merged)); } catch (_e) { /* ignore */ }
+            return merged;
+          });
         }
       })
       .catch(() => {});
