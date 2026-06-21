@@ -24,7 +24,9 @@ export default function TranscriptionSidebar({
   onSelect, onBatchStart, onBatchStop,
 }: Props) {
   const callsWithRecords = calls.filter(c => c.record_url).length;
-  const doneCount        = Object.keys(doneMap).length;
+  // Считаем только те comm_id которые реально есть в текущем отчёте
+  const currentIds = new Set(calls.map(c => c.comm_id));
+  const doneCount  = Object.keys(doneMap).filter(id => currentIds.has(id)).length;
 
   return (
     <div className="w-full sm:w-72 sm:shrink-0 flex flex-col gap-3">
