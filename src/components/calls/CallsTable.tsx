@@ -119,7 +119,7 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
     if (minSec && c.duration_sec < Number(minSec)) return false;
     if (maxSec && c.duration_sec > Number(maxSec)) return false;
     if (transcriptFilter === 'yes' && !doneMap[c.comm_id]) return false;
-    if (transcriptFilter === 'no' && !!doneMap[c.comm_id]) return false;
+    if (transcriptFilter === 'no' && (!!doneMap[c.comm_id] || !!c.record_url)) return false;
     if (transcriptFilter === 'record_no_transcript' && !(!!c.record_url && !doneMap[c.comm_id])) return false;
     const ai = doneMap[c.comm_id]?.ai;
     if (statusFilter) {
@@ -170,7 +170,7 @@ export default function CallsTable({ calls, hiddenIds: hiddenIdsProp, onHideCall
   const visible = calls.filter(c => !hiddenIds.has(c.comm_id));
   const cnt: CallsCounts = {
     withTranscript:         visible.filter(c => !!doneMap[c.comm_id]).length,
-    noTranscript:           visible.filter(c => !doneMap[c.comm_id]).length,
+    noTranscript:           visible.filter(c => !doneMap[c.comm_id] && !c.record_url).length,
     hasRecordNoTranscript:  visible.filter(c => !!c.record_url && !doneMap[c.comm_id]).length,
     success:         visible.filter(c => doneMap[c.comm_id]?.ai?.outcome === 'success').length,
     failure:         visible.filter(c => doneMap[c.comm_id]?.ai?.outcome === 'failure').length,
