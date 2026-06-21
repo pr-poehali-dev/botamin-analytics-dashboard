@@ -160,7 +160,7 @@ export default function CallsFilters({
                 <option value="pending">🔄 В работе ({cnt.pending})</option>
                 <option value="target">🎯 Целевые ({cnt.target})</option>
                 <option value="non_target">⛔ Нецелевые ({cnt.non_target})</option>
-                <option value="no_ai">⚪ Без анализа ({cnt.no_ai})</option>
+
               </select>
             </div>
             <div>
