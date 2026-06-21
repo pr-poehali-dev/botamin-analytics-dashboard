@@ -163,26 +163,16 @@ export default function CallsFilters({
 
               </select>
             </div>
-            <div className="col-span-2">
+            <div>
               <label className={labelCls} style={labelStyle}>Транскрипт</label>
-              <div className="grid grid-cols-2 gap-1.5">
-                {[
-                  { v: '',                      label: 'Все' },
-                  { v: 'yes',                   label: `📝 Есть (${cnt.withTranscript})` },
-                  { v: 'no',                    label: `🔇 Нет (${cnt.noTranscript})` },
-                  { v: 'record_no_transcript',  label: `🎙️ Запись без транскрипта (${cnt.hasRecordNoTranscript})` },
-                ].map(opt => (
-                  <button key={opt.v} onClick={() => setTranscriptFilter(opt.v)}
-                    className="px-2 py-2 rounded-lg text-xs font-medium text-left transition-all"
-                    style={{
-                      background: transcriptFilter === opt.v ? 'rgba(0,255,136,0.12)' : 'var(--bg-elevated)',
-                      border: `1px solid ${transcriptFilter === opt.v ? 'rgba(0,255,136,0.4)' : 'var(--border-default)'}`,
-                      color: transcriptFilter === opt.v ? 'var(--brand-green)' : 'var(--text-muted)',
-                    }}>
-                    {opt.label}
-                  </button>
-                ))}
-              </div>
+              <select value={transcriptFilter} onChange={e => setTranscriptFilter(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-xs outline-none"
+                style={selStyle(!!transcriptFilter)}>
+                <option value="">Все</option>
+                <option value="yes">📝 Есть ({cnt.withTranscript})</option>
+                <option value="no">🔇 Нет ({cnt.noTranscript})</option>
+                <option value="record_no_transcript">🎙️ Запись без транскрипта ({cnt.hasRecordNoTranscript})</option>
+              </select>
             </div>
           </div>
 
