@@ -125,12 +125,14 @@ export default function DashboardHeader({
 
           {/* Правая панель */}
           <div className="flex items-center gap-1.5 shrink-0">
-            <div className="px-2 py-1 rounded-full text-xs flex items-center gap-1.5"
+            <div className="hidden sm:flex px-2 py-1 rounded-full text-xs items-center gap-1.5"
               style={{ background: 'var(--brand-green-muted)', border: '1px solid rgba(0,255,136,0.2)', color: 'var(--brand-green)' }}>
               <div className="w-1.5 h-1.5 rounded-full animate-pulse" style={{ background: 'var(--brand-green)' }} />
               <span className="font-semibold">{total.toLocaleString('ru-RU')}</span>
             </div>
-            <AutoPilot calls={calls} autoStart={autoStart} />
+            <div className="hidden sm:block">
+              <AutoPilot calls={calls} autoStart={autoStart} />
+            </div>
             <button onClick={onShowReports}
               className="flex items-center gap-1.5 px-2 py-1 rounded-lg text-xs"
               style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-default)', color: 'var(--text-secondary)' }}>
