@@ -261,9 +261,10 @@ export async function listReports(): Promise<Report[]> {
 
 /** Загрузить один отчёт (с полным списком звонков) */
 export async function loadReport(id: string): Promise<CallsData | null> {
-  // 1. Пробуем локальный кэш (только если calls есть)
+  // 1. Пробуем локальный кэш (только если calls есть и by_day валиден)
   const cached = await cacheGet<CallsData>(`data_${id}`);
-  if (cached && cached.calls && cached.calls.length > 0 && cached.total > 0) {
+  const byDayOk = cached?.by_day?.length > 0 && cached.by_day[0]?.date !== undefined && cached.by_day[0]?.date !== 'undefined';
+  if (cached && cached.calls && cached.calls.length > 0 && cached.total > 0 && byDayOk) {
     return cached;
   }
 
