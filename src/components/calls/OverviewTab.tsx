@@ -1,12 +1,10 @@
+import { useState, useMemo } from 'react';
 import { formatSec, formatTotalHours, type CallsData } from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
 import {
   BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, Cell,
-  PieChart, Pie, Legend,
 } from 'recharts';
-import { type AiOverviewStats } from './useAiStats';
 
-// ── Tooltip для баров ────────────────────────────────────────────────────────
 interface TipProps { active?: boolean; payload?: { name: string; value: number }[]; label?: string }
 const BarTip = ({ active, payload, label }: TipProps) => {
   if (!active || !payload?.length) return null;
@@ -21,7 +19,6 @@ const BarTip = ({ active, payload, label }: TipProps) => {
   );
 };
 
-// ── KPI карточка ─────────────────────────────────────────────────────────────
 function KPI({ icon, label, value, sub, accent }: {
   icon: string; label: string; value: string; sub?: string; accent?: boolean
 }) {
@@ -38,14 +35,61 @@ function KPI({ icon, label, value, sub, accent }: {
   );
 }
 
-interface Props {
-  data: CallsData;
-  aiStats: AiOverviewStats | null;
+// ── Пресеты сравнения недель ─────────────────────────────────────────────────
+type Preset = '7' | '14' | '30';
+const PRESETS: { id: Preset; label: string }[] = [
+  { id: '7',  label: '7 дней' },
+  { id: '14', label: '14 дней' },
+  { id: '30', label: '30 дней' },
+];
+
+function toIso(d: string): string {
+  if (!d) return '';
+  if (d.includes('.')) { const [dd, mm, yyyy] = d.split('.'); return `${yyyy}-${mm}-${dd}`; }
+  return d.slice(0, 10);
 }
 
-export default function OverviewTab({ data, aiStats }: Props) {
+interface Props {
+  data: CallsData;
+}
+
+export default function OverviewTab({ data }: Props) {
   const maxDay    = Math.max(...data.by_day.map(d => d.count), 1);
   const maxBucket = Math.max(...data.duration_dist.map(d => d.count), 1);
+  const [preset, setPreset] = useState<Preset>('7');
+
+  // ── Сравнение периодов по by_day ─────────────────────────────────────────
+  const comparison = useMemo(() => {
+    const days = parseInt(preset);
+    const sorted = [...data.by_day].sort((a, b) => toIso(a.date).localeCompare(toIso(b.date)));
+    if (sorted.length < days * 2) return null;
+
+    const curSlice  = sorted.slice(-days);
+    const prevSlice = sorted.slice(-days * 2, -days);
+
+    const sum = (arr: typeof sorted) => arr.reduce((s, d) => s + d.count, 0);
+    const avgDur = (arr: typeof sorted) => arr.length ? Math.round(arr.reduce((s, d) => s + d.avg_sec, 0) / arr.length) : 0;
+
+    const curCount  = sum(curSlice);
+    const prevCount = sum(prevSlice);
+    const curAvg    = avgDur(curSlice);
+    const prevAvg   = avgDur(prevSlice);
+
+    const pct = (cur: number, prev: number) =>
+      prev === 0 ? null : Math.round((cur - prev) / prev * 100);
+
+    return {
+      curLabel:  `${curSlice[0]?.date} — ${curSlice[curSlice.length - 1]?.date}`,
+      prevLabel: `${prevSlice[0]?.date} — ${prevSlice[prevSlice.length - 1]?.date}`,
+      curCount, prevCount, deltaCount: pct(curCount, prevCount),
+      curAvg,   prevAvg,  deltaAvg:   pct(curAvg,   prevAvg),
+      chartData: curSlice.map((d, i) => ({
+        date: d.date,
+        current:  d.count,
+        previous: prevSlice[i]?.count ?? 0,
+      })),
+    };
+  }, [data.by_day, preset]);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -54,11 +98,9 @@ export default function OverviewTab({ data, aiStats }: Props) {
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
         <KPI icon="PhoneCall" label="Всего звонков" value={data.total.toLocaleString('ru-RU')} accent />
         <KPI icon="Clock" label="Средняя длительность"
-          value={formatSec(data.avg_duration_sec)}
-          sub="время разговора" />
+          value={formatSec(data.avg_duration_sec)} sub="время разговора" />
         <KPI icon="Timer" label="Суммарное время"
-          value={formatTotalHours(data.total_talk_sec)}
-          sub="часов разговоров" />
+          value={formatTotalHours(data.total_talk_sec)} sub="часов разговоров" />
         <div className="rounded-2xl p-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
           <div className="flex items-center gap-2 mb-3">
             <Icon name="PhoneOutgoing" size={15} style={{ color: 'var(--text-muted)' }} />
@@ -122,6 +164,134 @@ export default function OverviewTab({ data, aiStats }: Props) {
         </ResponsiveContainer>
       </div>
 
+      {/* Сравнение периодов */}
+      {data.by_day.length >= 14 && (
+        <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+          <div className="flex items-center justify-between gap-4 mb-5 flex-wrap">
+            <div>
+              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
+                Сравнение периодов
+              </h2>
+              <p className="text-xs mt-0.5" style={{ color: 'var(--text-muted)' }}>
+                Последние {preset} дней vs предыдущие {preset} дней
+              </p>
+            </div>
+            <div className="flex gap-1">
+              {PRESETS.map(p => (
+                <button key={p.id} onClick={() => setPreset(p.id)}
+                  className="px-3 py-1 rounded-lg text-xs font-medium transition-all"
+                  style={{
+                    background: preset === p.id ? 'rgba(0,255,136,0.15)' : 'var(--bg-elevated)',
+                    border: `1px solid ${preset === p.id ? 'rgba(0,255,136,0.4)' : 'var(--border-default)'}`,
+                    color: preset === p.id ? 'var(--brand-green)' : 'var(--text-muted)',
+                  }}>
+                  {p.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {comparison ? (
+            <>
+              {/* Легенда периодов */}
+              <div className="flex gap-4 mb-4 flex-wrap">
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(0,255,136,0.8)' }} />
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Текущий период
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>({comparison.curLabel})</span>
+                </div>
+                <div className="flex items-center gap-2">
+                  <div className="w-3 h-3 rounded-sm" style={{ background: 'rgba(96,165,250,0.6)' }} />
+                  <span className="text-xs font-medium" style={{ color: 'var(--text-primary)' }}>
+                    Предыдущий период
+                  </span>
+                  <span className="text-xs" style={{ color: 'var(--text-muted)' }}>({comparison.prevLabel})</span>
+                </div>
+              </div>
+
+              {/* График сравнения */}
+              <ResponsiveContainer width="100%" height={160}>
+                <BarChart data={comparison.chartData} margin={{ top: 0, right: 0, bottom: 0, left: -20 }}>
+                  <XAxis dataKey="date" tick={{ fill: 'var(--text-muted)', fontSize: 9 }} axisLine={false} tickLine={false}
+                    interval={Math.floor(comparison.chartData.length / 6)} />
+                  <YAxis tick={{ fill: 'var(--text-muted)', fontSize: 10 }} axisLine={false} tickLine={false} />
+                  <Tooltip
+                    content={({ active, payload, label }) => {
+                      if (!active || !payload?.length) return null;
+                      return (
+                        <div className="px-3 py-2 rounded-lg text-xs border"
+                          style={{ background: 'var(--bg-elevated)', borderColor: 'var(--border-default)', color: 'var(--text-primary)' }}>
+                          <div className="font-semibold mb-1">{label}</div>
+                          {payload.map((p, i) => (
+                            <div key={i} style={{ color: p.color }}>{p.name}: {p.value}</div>
+                          ))}
+                        </div>
+                      );
+                    }}
+                    cursor={false}
+                  />
+                  <Bar dataKey="current"  name="Текущий"    radius={[3,3,0,0]} fill="rgba(0,255,136,0.8)" />
+                  <Bar dataKey="previous" name="Предыдущий" radius={[3,3,0,0]} fill="rgba(96,165,250,0.5)" />
+                </BarChart>
+              </ResponsiveContainer>
+
+              {/* Итоговые карточки */}
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                {[
+                  {
+                    label: 'Звонков за период',
+                    cur: comparison.curCount.toLocaleString('ru-RU'),
+                    prev: comparison.prevCount.toLocaleString('ru-RU'),
+                    delta: comparison.deltaCount,
+                    icon: 'PhoneCall',
+                  },
+                  {
+                    label: 'Средняя длительность',
+                    cur: formatSec(comparison.curAvg),
+                    prev: formatSec(comparison.prevAvg),
+                    delta: comparison.deltaAvg,
+                    icon: 'Clock',
+                  },
+                ].map((card, i) => {
+                  const d = card.delta;
+                  const isUp   = d != null && d > 0;
+                  const isDown = d != null && d < 0;
+                  return (
+                    <div key={i} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
+                      <div className="flex items-center gap-1.5 mb-2">
+                        <Icon name={card.icon} size={12} style={{ color: 'var(--text-muted)' }} />
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{card.label}</span>
+                      </div>
+                      <div className="text-lg font-black font-mono" style={{ color: 'var(--text-primary)' }}>
+                        {card.cur}
+                      </div>
+                      <div className="flex items-center gap-2 mt-1">
+                        <span className="text-xs" style={{ color: 'var(--text-muted)' }}>
+                          было: {card.prev}
+                        </span>
+                        {d != null && (
+                          <span className="flex items-center gap-0.5 text-xs font-semibold"
+                            style={{ color: isUp ? 'var(--brand-green)' : isDown ? '#ff4444' : 'var(--text-muted)' }}>
+                            <Icon name={isUp ? 'TrendingUp' : isDown ? 'TrendingDown' : 'Minus'} size={10} />
+                            {isUp ? '+' : ''}{d}%
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </>
+          ) : (
+            <p className="text-xs text-center py-4" style={{ color: 'var(--text-muted)' }}>
+              Недостаточно данных для сравнения {preset} + {preset} дней
+            </p>
+          )}
+        </div>
+      )}
+
       {/* Распределение по длительности */}
       <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
         <div className="mb-4">
@@ -159,140 +329,6 @@ export default function OverviewTab({ data, aiStats }: Props) {
           </div>
         </div>
       </div>
-
-      {/* AI-статусы */}
-      {aiStats && aiStats.analyzed > 0 && (() => {
-        const typePie = [
-          { name: 'Целевые',   value: aiStats.target,    fill: 'var(--brand-green)' },
-          { name: 'Нецелевые', value: aiStats.nonTarget, fill: '#334155' },
-        ];
-        const outcomePie = [
-          { name: 'Успех',    value: aiStats.success, fill: 'var(--brand-green)' },
-          { name: 'Отказ',    value: aiStats.failure, fill: '#ff4444' },
-          { name: 'В работе', value: aiStats.pending, fill: '#ff8c00' },
-        ];
-        const interestPie = [
-          { name: 'Высокий', value: aiStats.interestHigh,   fill: 'var(--brand-green)' },
-          { name: 'Средний', value: aiStats.interestMedium, fill: '#ff8c00' },
-          { name: 'Низкий',  value: aiStats.interestLow,    fill: '#ff4444' },
-        ];
-        const fmt = (n: number | null, unit = '%') =>
-          n == null ? null : `${n > 0 ? '+' : ''}${n}${unit}`;
-        const statRows = [
-          { label: 'Проанализировано',        value: aiStats.analyzed.toLocaleString('ru-RU'),                           icon: 'Sparkles',       color: 'var(--brand-green)', delta: null },
-          { label: 'Целевые',                 value: `${aiStats.target.toLocaleString('ru-RU')} (${aiStats.targetRate}%)`, icon: 'Target',         color: 'var(--brand-green)', delta: aiStats.hasPrev ? fmt(aiStats.delta.targetRate) : null },
-          { label: 'Квалифицированы',         value: `${aiStats.qualYes.toLocaleString('ru-RU')} (${aiStats.qualRate}%)`,  icon: 'UserCheck',      color: '#60a5fa',            delta: aiStats.hasPrev ? fmt(aiStats.delta.qualRate) : null },
-          { label: 'Конверсия (успех)',        value: `${aiStats.success.toLocaleString('ru-RU')} (${aiStats.convRate}%)`,  icon: 'TrendingUp',     color: 'var(--brand-green)', delta: aiStats.hasPrev ? fmt(aiStats.delta.convRate) : null },
-          { label: 'В работе',                value: aiStats.pending.toLocaleString('ru-RU'),                             icon: 'Clock',          color: '#ff8c00',            delta: null },
-          { label: 'Скрипт соблюдён',         value: `${aiStats.scriptYes.toLocaleString('ru-RU')} (${aiStats.scriptRate}%)`, icon: 'ClipboardCheck', color: '#a78bfa',         delta: aiStats.hasPrev ? fmt(aiStats.delta.scriptRate) : null },
-          { label: 'Возражения отработаны',   value: `${aiStats.objYes.toLocaleString('ru-RU')} (${aiStats.objRate}%)`,   icon: 'ShieldCheck',    color: '#34d399',            delta: aiStats.hasPrev ? fmt(aiStats.delta.objRate) : null },
-          { label: 'Средняя оценка оператора', value: aiStats.avgScore ? `${aiStats.avgScore} / 10` : '—',                icon: 'Star',           color: '#fbbf24',            delta: aiStats.hasPrev ? fmt(aiStats.delta.avgScore, '') : null },
-        ];
-        const kpiList = [
-          { label: 'Целевые',          val: `${aiStats.targetRate}%`,                      sub: `${aiStats.target} зв.`,  color: 'var(--brand-green)', icon: 'Target',     d: aiStats.delta.targetRate, unit: '%' },
-          { label: 'Конверсия',        val: `${aiStats.convRate}%`,                        sub: `${aiStats.success} успех`, color: 'var(--brand-green)', icon: 'TrendingUp', d: aiStats.delta.convRate,   unit: '%' },
-          { label: 'Квалификация',     val: `${aiStats.qualRate}%`,                        sub: `${aiStats.qualYes} зв.`, color: '#60a5fa',            icon: 'UserCheck',  d: aiStats.delta.qualRate,   unit: '%' },
-          { label: 'Оценка оператора', val: aiStats.avgScore ? `${aiStats.avgScore}/10` : '—', sub: 'средняя',           color: '#fbbf24',            icon: 'Star',       d: aiStats.delta.avgScore,   unit: '' },
-        ];
-        return (
-          <div className="rounded-2xl p-6 space-y-5" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
-            <div className="flex items-center gap-2 flex-wrap">
-              <Icon name="Sparkles" size={14} style={{ color: 'var(--brand-green)' }} />
-              <h2 className="text-sm font-semibold" style={{ color: 'var(--text-primary)' }}>
-                Аналитика ИИ — сводка
-              </h2>
-              <span className="text-xs px-2 py-0.5 rounded-full"
-                style={{ background: 'rgba(0,255,136,0.1)', color: 'var(--brand-green)', border: '1px solid rgba(0,255,136,0.2)' }}>
-                {aiStats.analyzed} из {data.total} звонков
-              </span>
-              {aiStats.hasPrev && (
-                <span className="text-xs ml-auto" style={{ color: 'var(--text-muted)' }}>
-                  ↕ сравнение: вторая половина периода vs первая
-                </span>
-              )}
-            </div>
-
-            {/* KPI строка */}
-            <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-              {kpiList.map((kpi, i) => {
-                const d = kpi.d;
-                const isUp   = d != null && d > 0;
-                const isDown = d != null && d < 0;
-                return (
-                  <div key={i} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-                    <div className="flex items-center gap-1.5 mb-2">
-                      <Icon name={kpi.icon} size={12} style={{ color: kpi.color }} />
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.label}</span>
-                    </div>
-                    <div className="text-xl font-black font-mono" style={{ color: kpi.color }}>{kpi.val}</div>
-                    <div className="flex items-center gap-1.5 mt-1">
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{kpi.sub}</span>
-                      {aiStats.hasPrev && d != null && (
-                        <span className="flex items-center gap-0.5 text-xs font-semibold"
-                          style={{ color: isUp ? 'var(--brand-green)' : isDown ? '#ff4444' : 'var(--text-muted)' }}>
-                          <Icon name={isUp ? 'TrendingUp' : isDown ? 'TrendingDown' : 'Minus'} size={10} />
-                          {isUp ? '+' : ''}{d}{kpi.unit}
-                        </span>
-                      )}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-
-            {/* Три диаграммы */}
-            <div className="grid sm:grid-cols-3 gap-4">
-              {[
-                { title: 'Типы звонков',     data: typePie },
-                { title: 'Итоги звонков',    data: outcomePie },
-                { title: 'Интерес клиентов', data: interestPie },
-              ].map((chart, ci) => (
-                <div key={ci} className="rounded-xl p-4" style={{ background: 'var(--bg-elevated)', border: '1px solid var(--border-subtle)' }}>
-                  <p className="text-xs font-semibold mb-3 uppercase tracking-wider" style={{ color: 'var(--text-muted)' }}>{chart.title}</p>
-                  <ResponsiveContainer width="100%" height={130}>
-                    <PieChart>
-                      <Pie data={chart.data} cx="50%" cy="50%" innerRadius={30} outerRadius={48}
-                        dataKey="value" paddingAngle={3}>
-                        {chart.data.map((entry, i) => <Cell key={i} fill={entry.fill} />)}
-                      </Pie>
-                      <Legend iconType="circle" iconSize={7} wrapperStyle={{ fontSize: 10 }} />
-                      <Tooltip formatter={(v) => [v, '']} />
-                    </PieChart>
-                  </ResponsiveContainer>
-                </div>
-              ))}
-            </div>
-
-            {/* Детальные показатели */}
-            <div className="grid sm:grid-cols-2 gap-2">
-              {statRows.map((row, i) => {
-                const dNum   = row.delta ? parseFloat(row.delta) : null;
-                const isUp   = dNum != null && dNum > 0;
-                const isDown = dNum != null && dNum < 0;
-                return (
-                  <div key={i} className="flex items-center justify-between px-3 py-2.5 rounded-lg"
-                    style={{ background: 'var(--bg-elevated)' }}>
-                    <div className="flex items-center gap-2">
-                      <Icon name={row.icon} size={12} style={{ color: row.color }} />
-                      <span className="text-xs" style={{ color: 'var(--text-muted)' }}>{row.label}</span>
-                    </div>
-                    <div className="flex items-center gap-2">
-                      {row.delta && (
-                        <span className="flex items-center gap-0.5 text-xs font-semibold"
-                          style={{ color: isUp ? 'var(--brand-green)' : isDown ? '#ff4444' : 'var(--text-muted)' }}>
-                          <Icon name={isUp ? 'TrendingUp' : isDown ? 'TrendingDown' : 'Minus'} size={9} />
-                          {row.delta}
-                        </span>
-                      )}
-                      <span className="text-xs font-semibold font-mono" style={{ color: 'var(--text-primary)' }}>{row.value}</span>
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        );
-      })()}
 
       {/* Сводная таблица */}
       <div className="rounded-2xl p-6" style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>

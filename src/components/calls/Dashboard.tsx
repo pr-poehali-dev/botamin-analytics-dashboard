@@ -7,7 +7,6 @@ import AiInsightsTab from '@/components/calls/AiInsightsTab';
 import ReportsManager from '@/components/calls/ReportsManager';
 import DashboardHeader from '@/components/calls/DashboardHeader';
 import OverviewTab from '@/components/calls/OverviewTab';
-import { useAiStats } from '@/components/calls/useAiStats';
 
 type Tab = 'overview' | 'calls' | 'transcription' | 'ai-insights' | 'recommendations';
 
@@ -35,8 +34,6 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
     });
   };
 
-  const aiStats = useAiStats(data.calls);
-
   return (
     <div className="min-h-screen" style={{ background: 'var(--bg-primary)', fontFamily: "'Golos Text', sans-serif" }}>
 
@@ -55,7 +52,7 @@ export default function Dashboard({ data, site, autoStart, activeReportId, onSwi
 
         {/* ── ОБЗОР ── */}
         {tab === 'overview' && (
-          <OverviewTab data={data} aiStats={aiStats} />
+          <OverviewTab data={data} />
         )}
 
         {/* ── ВСЕ ЗВОНКИ ── */}
