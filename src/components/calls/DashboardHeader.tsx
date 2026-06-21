@@ -83,28 +83,28 @@ export default function DashboardHeader({
             </div>
 
             {/* Мобиль — кнопка текущего раздела + дропдаун */}
-            <div className="sm:hidden relative w-full max-w-xs">
+            <div className="sm:hidden relative">
               <button
                 onClick={() => setMenuOpen(v => !v)}
-                className="flex items-center gap-2 w-full px-3 py-1.5 rounded-lg text-sm font-semibold"
+                className="flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-semibold whitespace-nowrap"
                 style={{
                   background: menuOpen ? 'var(--bg-elevated)' : 'var(--bg-card)',
                   border: '1px solid var(--border-default)',
                   color: 'var(--brand-green)',
                 }}>
                 <Icon name={activeTab?.icon || 'LayoutDashboard'} size={14} />
-                <span className="flex-1 text-left">{activeTab?.label}</span>
+                {activeTab?.label}
                 <Icon name={menuOpen ? 'ChevronUp' : 'ChevronDown'} size={13}
                   style={{ color: 'var(--text-muted)' }} />
               </button>
 
               {menuOpen && (
-                <div className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-50 shadow-xl"
-                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)' }}>
+                <div className="absolute top-full left-0 mt-1 rounded-xl overflow-hidden z-50 shadow-2xl"
+                  style={{ background: 'var(--bg-card)', border: '1px solid var(--border-default)', minWidth: '210px' }}>
                   {TABS.map((t, i) => (
                     <button key={t.id}
                       onClick={() => { onTabChange(t.id); setMenuOpen(false); }}
-                      className="flex items-center gap-3 w-full px-4 py-3 text-sm transition-all text-left"
+                      className="flex items-center gap-3 w-full px-4 py-3 text-sm font-medium whitespace-nowrap"
                       style={{
                         background: tab === t.id ? 'rgba(0,255,136,0.08)' : 'transparent',
                         color: tab === t.id ? 'var(--brand-green)' : 'var(--text-secondary)',
