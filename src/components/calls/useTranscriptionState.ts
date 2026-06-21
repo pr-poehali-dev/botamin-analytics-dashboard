@@ -130,20 +130,27 @@ export function useTranscriptionState({
           await sleep(5000);
           const pollRes  = await fetch(`${TRANSCRIBE_URL}?comm_id=${call.comm_id}`);
           const pollData = await pollRes.json();
-          if (pollData.status === 'done' && pollData.replica_count > 0) {
+          if (pollData.status === 'done') {
             return { comm_id: call.comm_id, full_text: pollData.full_text || '', replicas: pollData.replicas || [],
               replica_count: pollData.replica_count || 0, operator_replicas: pollData.operator_replicas || 0,
               client_replicas: pollData.client_replicas || 0, has_ivr: pollData.has_ivr, status: 'done', cached: false };
           }
           if (pollData.error) return null;
         }
-        return null;
+        // Таймаут — помечаем как done с 0 репликами чтобы не зациклиться
+        return { comm_id: call.comm_id, full_text: '', replicas: [],
+          replica_count: 0, operator_replicas: 0, client_replicas: 0, status: 'done', cached: false };
       }
 
-      if (data.status === 'done' && (data.replica_count > 0 || data.all_ivr)) {
+      if (data.status === 'done') {
         return { comm_id: call.comm_id, full_text: data.full_text || '', replicas: data.replicas || [],
           replica_count: data.replica_count || 0, operator_replicas: data.operator_replicas || 0,
           client_replicas: data.client_replicas || 0, has_ivr: data.has_ivr, status: 'done', cached: data.cached === true };
+      }
+      // Любой завершённый статус без реплик — тоже помечаем done чтобы не повторять
+      if (data.status === 'no_audio' || data.status === 'skipped' || data.empty) {
+        return { comm_id: call.comm_id, full_text: '', replicas: [],
+          replica_count: 0, operator_replicas: 0, client_replicas: 0, status: 'done', cached: false };
       }
       return null;
     } catch {
@@ -260,9 +267,13 @@ export function useTranscriptionState({
       const call = pending[i];
       setBatchCurrent(call.comm_id);
       const r = await transcribeOne(call);
-      if (r) {
-        setDoneMap(prev => ({ ...prev, [call.comm_id]: { replica_count: r.replica_count, operator_replicas: r.operator_replicas, client_replicas: r.client_replicas } }));
-      }
+      // Помечаем done даже если реплик 0 — чтобы не застревать на одних и тех же звонках
+      setDoneMap(prev => ({
+        ...prev,
+        [call.comm_id]: r
+          ? { replica_count: r.replica_count, operator_replicas: r.operator_replicas, client_replicas: r.client_replicas }
+          : { replica_count: 0, operator_replicas: 0, client_replicas: 0 },
+      }));
       setBatchDone(i + 1);
       if (i < pending.length - 1) await sleep(1000);
     }
