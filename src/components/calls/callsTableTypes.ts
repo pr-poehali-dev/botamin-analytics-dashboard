@@ -17,7 +17,7 @@ export type DoneMap = Record<string, {
 }>;
 
 export interface CallsCounts {
-  withTranscript: number; noTranscript: number;
+  withTranscript: number; noTranscript: number; hasRecordNoTranscript: number;
   success: number; failure: number; pending: number;
   target: number; non_target: number; no_ai: number;
   scoreHigh: number; scoreMid: number; scoreLow: number; scoreNone: number;

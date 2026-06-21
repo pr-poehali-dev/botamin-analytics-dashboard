@@ -171,6 +171,7 @@ export default function CallsFilters({
                 <option value="">Все</option>
                 <option value="yes">📝 Есть ({cnt.withTranscript})</option>
                 <option value="no">🔇 Нет ({cnt.noTranscript})</option>
+                <option value="record_no_transcript">🎙️ Есть запись, нет транскрипта ({cnt.hasRecordNoTranscript})</option>
               </select>
             </div>
           </div>
