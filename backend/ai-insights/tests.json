@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "action=stats",
+      "method": "GET",
+      "path": "/?action=stats",
+      "expectedStatus": 200,
+      "expectedBody": {"total": 689},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "action=recs",
+      "method": "GET",
+      "path": "/?action=recs",
+      "expectedStatus": 200,
+      "expectedBody": {"recommendations": []},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

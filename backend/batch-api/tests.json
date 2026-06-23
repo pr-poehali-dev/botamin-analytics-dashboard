@@ -1,0 +1,20 @@
+{
+  "tests": [
+    {
+      "name": "action=status",
+      "method": "GET",
+      "path": "/?action=status",
+      "expectedStatus": 200,
+      "expectedBody": {"done": {}},
+      "bodyMatcher": "partial"
+    },
+    {
+      "name": "action=pending",
+      "method": "GET",
+      "path": "/?action=pending",
+      "expectedStatus": 200,
+      "expectedBody": {"count": 0},
+      "bodyMatcher": "partial"
+    }
+  ]
+}

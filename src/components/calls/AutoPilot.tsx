@@ -2,11 +2,13 @@ import { useState, useRef, useEffect } from 'react';
 import Icon from '@/components/ui/icon';
 import { type CallRecord } from '@/lib/dataParser';
 
-const BATCH_STATUS_URL  = 'https://functions.poehali.dev/48734b10-f2f6-4ccf-8a66-88dbd3428b59';
+const BATCH_API_URL     = 'https://functions.poehali.dev/f43c5cc1-1b9b-41aa-ac2a-416878c7f5b9';
+const BATCH_STATUS_URL  = `${BATCH_API_URL}?action=status`;
+const BATCH_ANALYZE_URL = `${BATCH_API_URL}?action=pending`;
 const TRANSCRIBE_URL    = 'https://functions.poehali.dev/1cc0b8dc-c71b-4292-815d-cdae4f93cea8';
-const BATCH_ANALYZE_URL = 'https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018';
 const ANALYZE_URL       = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
-const AI_REC_URL        = 'https://functions.poehali.dev/8a2bb5b8-5bb9-4e68-889e-b7af1fccdac6';
+const AI_INSIGHTS_URL   = 'https://functions.poehali.dev/d671000f-9e45-471d-870d-789e1dd542c6';
+const AI_REC_URL        = `${AI_INSIGHTS_URL}?action=recs`;
 
 type Phase = 'idle' | 'transcribing' | 'analyzing' | 'recommendations' | 'done';
 
