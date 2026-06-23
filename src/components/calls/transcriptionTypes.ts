@@ -1,6 +1,6 @@
 export const TRANSCRIBE_URL   = 'https://functions.poehali.dev/1cc0b8dc-c71b-4292-815d-cdae4f93cea8';
 export const ANALYZE_URL      = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
-export const BATCH_STATUS_URL = 'https://functions.poehali.dev/f43c5cc1-1b9b-41aa-ac2a-416878c7f5b9?action=status';
+export const BATCH_STATUS_URL = 'https://functions.poehali.dev/48734b10-f2f6-4ccf-8a66-88dbd3428b59';
 
 export type JobStatus = 'idle' | 'transcribing' | 'analyzing' | 'done' | 'error';
 

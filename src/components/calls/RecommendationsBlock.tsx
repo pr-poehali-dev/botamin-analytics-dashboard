@@ -3,7 +3,7 @@ import { formatSec, formatTotalHours, type CallsData } from '@/lib/dataParser';
 import Icon from '@/components/ui/icon';
 import RecommendationsChat from '@/components/calls/RecommendationsChat';
 
-const AI_REC_URL = 'https://functions.poehali.dev/d671000f-9e45-471d-870d-789e1dd542c6?action=recs';
+const AI_REC_URL = 'https://functions.poehali.dev/8a2bb5b8-5bb9-4e68-889e-b7af1fccdac6';
 
 const priorityColor = { high: '#ff4444', medium: '#ff8c00', low: 'var(--brand-green)' };
 const priorityLabel = { high: 'Срочно', medium: 'Важно', low: 'Совет' };

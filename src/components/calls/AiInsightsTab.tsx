@@ -6,10 +6,8 @@ import AiInsightsKpi from './ai-insights/AiInsightsKpi';
 import AiInsightsCharts from './ai-insights/AiInsightsCharts';
 import AiInsightsOutcomes from './ai-insights/AiInsightsOutcomes';
 
-const AI_INSIGHTS_URL   = 'https://functions.poehali.dev/d671000f-9e45-471d-870d-789e1dd542c6';
-const AI_STATS_URL      = `${AI_INSIGHTS_URL}?action=stats`;
-const BATCH_API_URL     = 'https://functions.poehali.dev/f43c5cc1-1b9b-41aa-ac2a-416878c7f5b9';
-const BATCH_ANALYZE_URL = `${BATCH_API_URL}?action=pending`;
+const AI_STATS_URL      = 'https://functions.poehali.dev/db240be1-ed61-46d9-bcbf-59bbc6130fea';
+const BATCH_ANALYZE_URL = 'https://functions.poehali.dev/8d6690af-4758-4719-9e1b-225186836018';
 const ANALYZE_URL       = 'https://functions.poehali.dev/6f70becf-3fb4-43a7-98a5-747436055b2d';
 
 function toIso(d: string): string {

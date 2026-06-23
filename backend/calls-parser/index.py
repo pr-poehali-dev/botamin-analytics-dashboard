@@ -1,8 +1,7 @@
 """
 Парсит Excel-файл со звонками CoMagic/Bitrix24.
-GET ?action=probe&url=... — быстрый предпросмотр файла (статусы, даты, примеры строк)
-GET ?url=...             — полный парсинг по URL
-POST                     — полный парсинг base64-файла
+Принимает файл через POST (base64) или URL через GET.
+Возвращает KPI, динамику по дням, распределение по часам, длительностям, таблицу звонков.
 """
 import json
 import io
@@ -189,49 +188,6 @@ def build_analytics(calls: list) -> dict:
     }
 
 
-def probe_excel(data: bytes) -> dict:
-    """Быстрый предпросмотр Excel: статусы, длительности, даты, примеры строк."""
-    import openpyxl
-    import io as _io
-    from collections import Counter as C
-    import re as _re
-    wb = openpyxl.load_workbook(_io.BytesIO(data), read_only=True, data_only=True)
-    ws = wb.active
-    rows_raw = list(ws.iter_rows(values_only=True))
-    header_row = None
-    data_start = 0
-    for i, row in enumerate(rows_raw):
-        if row[0] and str(row[0]).startswith('Дата'):
-            header_row = [str(c) if c is not None else '' for c in row]
-            data_start = i + 1
-            break
-    if not header_row:
-        return {'error': 'header not found'}
-    data_rows = [[str(c) if c is not None else '' for c in row]
-                 for row in rows_raw[data_start:] if any(c is not None for c in row)]
-    total = len(data_rows)
-    statuses = C()
-    durations_sec = []
-    dates = []
-    for row in data_rows:
-        date = row[0] if len(row) > 0 else ''
-        dur  = row[1] if len(row) > 1 else ''
-        st   = row[4] if len(row) > 4 else ''
-        statuses[st] += 1
-        if date:
-            dates.append(date)
-        m = _re.match(r'(\d+):(\d+):(\d+)', str(dur))
-        if m:
-            durations_sec.append(int(m.group(1))*3600 + int(m.group(2))*60 + int(m.group(3)))
-    avg_dur = sum(durations_sec) / len(durations_sec) if durations_sec else 0
-    return {
-        'headers': header_row, 'total_rows': total, 'statuses': dict(statuses),
-        'avg_duration_sec': round(avg_dur),
-        'date_range': {'min': min(dates) if dates else '', 'max': max(dates) if dates else ''},
-        'samples': data_rows[:10],
-    }
-
-
 def handler(event: dict, context) -> dict:
     cors = {
         'Access-Control-Allow-Origin': '*',
@@ -244,15 +200,6 @@ def handler(event: dict, context) -> dict:
 
     method = event.get('httpMethod', 'GET')
     params = event.get('queryStringParameters') or {}
-
-    # GET ?action=probe — предпросмотр
-    if method == 'GET' and params.get('action') == 'probe' and params.get('url'):
-        req = urllib.request.Request(params['url'], headers={'User-Agent': 'Mozilla/5.0'})
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            file_data = resp.read()
-        result = probe_excel(file_data)
-        return {'statusCode': 200, 'headers': {**cors, 'Content-Type': 'application/json'},
-                'body': json.dumps(result, ensure_ascii=False)}
 
     # GET с URL
     if method == 'GET' and params.get('url'):

@@ -1,6 +1,4 @@
 {
-  "ai-insights": "https://functions.poehali.dev/d671000f-9e45-471d-870d-789e1dd542c6",
-  "batch-api": "https://functions.poehali.dev/f43c5cc1-1b9b-41aa-ac2a-416878c7f5b9",
   "reports-api": "https://functions.poehali.dev/6dbf1220-e56e-47c8-a3ec-0660d68b062a",
   "chat-recommendations": "https://functions.poehali.dev/2e498fb3-3b26-4242-9865-1faa4c3f5f49",
   "swap-speakers": "https://functions.poehali.dev/d65e00ae-2b97-479a-8a82-5e9340823220",
