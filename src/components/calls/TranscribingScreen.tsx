@@ -176,10 +176,15 @@ export default function TranscribingScreen({ data, onDone, onSkip }: Props) {
 
       {/* Лого */}
       <div className="flex items-center gap-3 mb-10">
-        <div className="w-11 h-11 rounded-xl flex items-center justify-center font-black text-xl"
-          style={{ background: 'var(--brand-green)', color: '#000' }}>S</div>
+        <svg width="44" height="44" viewBox="0 0 64 64" fill="none">
+          <rect width="64" height="64" rx="16" fill="#00FF88"/>
+          <path d="M32 14C22.06 14 14 22.06 14 32C14 41.94 22.06 50 32 50C41.94 50 50 41.94 50 32" stroke="#000" strokeWidth="3.5" strokeLinecap="round"/>
+          <path d="M42 14L50 14L50 22" stroke="#000" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+          <path d="M32 32L49.5 14.5" stroke="#000" strokeWidth="3.5" strokeLinecap="round"/>
+          <circle cx="32" cy="32" r="4.5" fill="#000"/>
+        </svg>
         <div>
-          <div className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>СайтАктив</div>
+          <div className="font-bold text-lg" style={{ color: 'var(--text-primary)' }}>ЗвонокАктив</div>
           <div className="text-xs" style={{ color: 'var(--text-muted)' }}>Транскрибация звонков</div>
         </div>
       </div>

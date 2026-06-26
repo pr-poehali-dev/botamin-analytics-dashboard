@@ -52,9 +52,14 @@ export default function DashboardHeader({
 
           {/* Лого */}
           <div className="flex items-center gap-2 shrink-0">
-            <div className="w-7 h-7 rounded-md flex items-center justify-center font-black text-sm shrink-0"
-              style={{ background: 'var(--brand-green)', color: '#000' }}>S</div>
-            <span className="font-bold text-sm hidden sm:inline" style={{ color: 'var(--text-primary)' }}>СайтАктив</span>
+            <svg width="28" height="28" viewBox="0 0 64 64" fill="none" className="shrink-0">
+              <rect width="64" height="64" rx="16" fill="#00FF88"/>
+              <path d="M32 14C22.06 14 14 22.06 14 32C14 41.94 22.06 50 32 50C41.94 50 50 41.94 50 32" stroke="#000" strokeWidth="3.5" strokeLinecap="round"/>
+              <path d="M42 14L50 14L50 22" stroke="#000" strokeWidth="3.5" strokeLinecap="round" strokeLinejoin="round"/>
+              <path d="M32 32L49.5 14.5" stroke="#000" strokeWidth="3.5" strokeLinecap="round"/>
+              <circle cx="32" cy="32" r="4.5" fill="#000"/>
+            </svg>
+            <span className="font-bold text-sm hidden sm:inline" style={{ color: 'var(--text-primary)' }}>ЗвонокАктив</span>
             {site && (
               <span className="text-xs px-2 py-0.5 rounded-full hidden md:inline"
                 style={{ background: 'var(--bg-elevated)', color: 'var(--text-muted)' }}>
