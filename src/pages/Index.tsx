@@ -117,7 +117,7 @@ export default function Index() {
   );
 
   if (screen === 'login') {
-    return <LoginScreen onLogin={handleLogin} />;
+    return <LoginScreen onLogin={handleLogin} onLoad={handleLoad} />;
   }
 
   if (screen === 'upload') {
